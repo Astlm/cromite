@@ -1,0 +1,114 @@
+From d2b70569aa69967172b994c7abc0883d43b987ab Mon Sep 17 00:00:00 2001
+From: cromite <cromite@local>
+Date: Fri, 19 Dec 2025 00:59:26 +0000
+Subject: [PATCH] Add Developer Tools entry to app menu
+
+FILE:Add-developer-tools-menu-item.patch
+---
+ chrome/android/chrome_java_resources.gni      |  1 +
+ .../android/java/res/drawable/ic_devtools.xml | 18 +++++++++++++++
+ .../TabbedAppMenuPropertiesDelegate.java      | 22 +++++++++++++++++++
+ .../strings/android_chrome_strings.grd        |  3 +++
+ 4 files changed, 44 insertions(+)
+ create mode 100644 chrome/android/java/res/drawable/ic_devtools.xml
+
+diff --git a/chrome/android/chrome_java_resources.gni b/chrome/android/chrome_java_resources.gni
+index 7f9066d812..a36c056fc6 100644
+--- a/chrome/android/chrome_java_resources.gni
++++ b/chrome/android/chrome_java_resources.gni
+@@ -342,6 +342,7 @@ chrome_java_resources = [
+   "java/res/drawable/ic_cloud_offline_24dp.xml",
+   "java/res/drawable/ic_colorize_24dp.xml",
+   "java/res/drawable/ic_drag_handle_24dp.xml",
++  "java/res/drawable/ic_devtools.xml",
+   "java/res/drawable/ic_error.xml",
+   "java/res/drawable/ic_features_24dp.xml",
+   "java/res/drawable/ic_feedback_24dp.xml",
+diff --git a/chrome/android/java/res/drawable/ic_devtools.xml b/chrome/android/java/res/drawable/ic_devtools.xml
+new file mode 100644
+index 0000000000..0bec53a506
+--- /dev/null
++++ b/chrome/android/java/res/drawable/ic_devtools.xml
+@@ -0,0 +1,18 @@
++<?xml version="1.0" encoding="utf-8"?>
++<!--
++Copyright 2025 The Chromium Authors
++Use of this source code is governed by a BSD-style license that can be
++found in the LICENSE file.
++-->
++
++<vector
++    xmlns:android="http://schemas.android.com/apk/res/android"
++    android:width="24dp"
++    android:height="24dp"
++    android:viewportWidth="24"
++    android:viewportHeight="24"
++    android:tint="@macro/default_icon_color">
++    <path
++        android:fillColor="@android:color/white"
++        android:pathData="M9.4,16.6 L4.8,12 L9.4,7.4 L8,6 L2,12 L8,18 L9.4,16.6 Z M14.6,16.6 L19.2,12 L14.6,7.4 L16,6 L22,12 L16,18 L14.6,16.6 Z" />
++</vector>
+diff --git a/chrome/android/java/src/org/chromium/chrome/browser/tabbed_mode/TabbedAppMenuPropertiesDelegate.java b/chrome/android/java/src/org/chromium/chrome/browser/tabbed_mode/TabbedAppMenuPropertiesDelegate.java
+index b3afb3f5bc..65a384f52c 100644
+--- a/chrome/android/java/src/org/chromium/chrome/browser/tabbed_mode/TabbedAppMenuPropertiesDelegate.java
++++ b/chrome/android/java/src/org/chromium/chrome/browser/tabbed_mode/TabbedAppMenuPropertiesDelegate.java
+@@ -33,6 +33,7 @@ import org.chromium.chrome.browser.app.appmenu.AppMenuPropertiesDelegateImpl;
+ import org.chromium.chrome.browser.app.creator.CreatorActivity;
+ import org.chromium.chrome.browser.bookmarks.BookmarkModel;
+ import org.chromium.chrome.browser.device.DeviceConditions;
++import org.chromium.chrome.browser.devtools.DevToolsWindowAndroid;
+ import org.chromium.chrome.browser.enterprise.util.ManagedBrowserUtils;
+ import org.chromium.chrome.browser.feed.FeedFeatures;
+ import org.chromium.chrome.browser.feed.webfeed.WebFeedFaviconFetcher;
+@@ -405,6 +406,11 @@ public class TabbedAppMenuPropertiesDelegate extends AppMenuPropertiesDelegateIm
+             modelList.add(buildReaderModePrefsItem());
+         }
+ 
++        // Developer Tools
++        if (shouldShowDevToolsItem(currentTab)) {
++            modelList.add(buildDevToolsItem());
++        }
++
+         // Settings
+         modelList.add(buildSettingsItem());
+ 
+@@ -955,6 +961,22 @@ public class TabbedAppMenuPropertiesDelegate extends AppMenuPropertiesDelegateIm
+                         shouldShowIconBeforeItem() ? R.drawable.help_outline : 0));
+     }
+ 
++    private boolean shouldShowDevToolsItem(@Nullable Tab currentTab) {
++        return currentTab != null
++                && currentTab.getWebContents() != null
++                && DevToolsWindowAndroid.isDevToolsAllowedFor(
++                        currentTab.getProfile(), currentTab.getWebContents());
++    }
++
++    private MVCListAdapter.ListItem buildDevToolsItem() {
++        return new MVCListAdapter.ListItem(
++                AppMenuHandler.AppMenuItemType.STANDARD,
++                buildModelForStandardMenuItem(
++                        R.id.dev_tools,
++                        R.string.menu_developer_tools,
++                        shouldShowIconBeforeItem() ? R.drawable.ic_devtools : 0));
++    }
++
+     private boolean shouldShowQuickDeleteItem() {
+         return !isIncognitoShowing();
+     }
+diff --git a/chrome/browser/ui/android/strings/android_chrome_strings.grd b/chrome/browser/ui/android/strings/android_chrome_strings.grd
+index 88ad7472a5..8a3b2aa443 100644
+--- a/chrome/browser/ui/android/strings/android_chrome_strings.grd
++++ b/chrome/browser/ui/android/strings/android_chrome_strings.grd
+@@ -4554,6 +4554,9 @@ To change this setting, <ph name="BEGIN_LINK">BEGIN_LINK</ph>delete the Chrome d
+       <message name="IDS_MENU_READER_MODE_PREFS" desc="Menu item to show reader mode preferences pane, which allows users to change the appearance (font size, theme, etc.) of the page. [CHAR_LIMIT=27]">
+         Appearance
+       </message>
++      <message name="IDS_MENU_DEVELOPER_TOOLS" desc="Menu item for opening Developer Tools. [CHAR_LIMIT=27]">
++        Developer tools
++      </message>
+       <message name="IDS_MENU_SETTINGS" desc="Menu item for opening browser settings. [CHAR_LIMIT=27]">
+         Settings
+       </message>
+-- 
+2.47.3
+

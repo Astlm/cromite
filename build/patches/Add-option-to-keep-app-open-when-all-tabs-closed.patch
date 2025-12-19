@@ -1,0 +1,160 @@
+From f3a50abaae139f4d06e1846266ab3303ec1595ad Mon Sep 17 00:00:00 2001
+From: cromite <cromite@local>
+Date: Thu, 18 Dec 2025 23:42:29 +0000
+Subject: [PATCH] Add option to keep app open when all tabs closed
+
+FILE:Add-option-to-keep-app-open-when-all-tabs-closed.patch
+---
+ .../strings/android_chrome_tab_ui_strings.grd    |  7 +++++++
+ .../chrome/browser/ChromeTabbedActivity.java     |  9 ++++++++-
+ .../multiwindow/MultiInstanceManagerApi31.java   |  5 +++++
+ .../chrome/browser/tabmodel/TabModelImpl.java    |  5 ++++-
+ .../java/res/xml/accessibility_preferences.xml   |  6 ++++++
+ .../accessibility/AccessibilitySettings.java     | 16 ++++++++++++++++
+ 6 files changed, 46 insertions(+), 2 deletions(-)
+
+diff --git a/chrome/android/features/tab_ui/java/strings/android_chrome_tab_ui_strings.grd b/chrome/android/features/tab_ui/java/strings/android_chrome_tab_ui_strings.grd
+index f096397e4d..6c8b2faf78 100644
+--- a/chrome/android/features/tab_ui/java/strings/android_chrome_tab_ui_strings.grd
++++ b/chrome/android/features/tab_ui/java/strings/android_chrome_tab_ui_strings.grd
+@@ -1157,6 +1157,13 @@
+           other {<ph name="ITEMS_COUNT_MANY">%1$d<ex>8</ex></ph> selected}
+         }
+       </message>
++
++      <message name="IDS_KEEP_APP_OPEN_WHEN_ALL_TABS_CLOSED_TITLE" desc="Title for a setting that prevents the browser from exiting when the last tab is closed.">
++        Keep app open when all tabs closed
++      </message>
++      <message name="IDS_KEEP_APP_OPEN_WHEN_ALL_TABS_CLOSED_SUMMARY" desc="Summary for a setting that prevents the browser from exiting when the last tab is closed.">
++        When enabled, closing the last tab won’t exit the browser
++      </message>
+     </messages>
+   </release>
+ </grit>
+diff --git a/chrome/android/java/src/org/chromium/chrome/browser/ChromeTabbedActivity.java b/chrome/android/java/src/org/chromium/chrome/browser/ChromeTabbedActivity.java
+index f526498397..e5ad1a15c2 100644
+--- a/chrome/android/java/src/org/chromium/chrome/browser/ChromeTabbedActivity.java
++++ b/chrome/android/java/src/org/chromium/chrome/browser/ChromeTabbedActivity.java
+@@ -918,7 +918,9 @@ public class ChromeTabbedActivity extends ChromeActivity {
+                                 if (shouldRemoveWindowWithZeroTabs) {
+                                     finishAndRemoveTask();
+                                 } else if (HomepageManager.getInstance()
+-                                        .shouldCloseAppWithZeroTabs()) {
++                                        .shouldCloseAppWithZeroTabs()
++                                        && !ContextUtils.getAppSharedPreferences().getBoolean(
++                                                "keep_app_open_when_all_tabs_closed", false)) {
+                                     // If the last tab is closed, and homepage is enabled, then exit
+                                     // Chrome.
+                                     finish();
+@@ -985,6 +987,11 @@ public class ChromeTabbedActivity extends ChromeActivity {
+     }
+ 
+     private boolean shouldRemoveWindowWithZeroTabs(@TabClosingSource int closingSource) {
++        if (ContextUtils.getAppSharedPreferences()
++                .getBoolean("keep_app_open_when_all_tabs_closed", false)) {
++            return false;
++        }
++
+         // Close incognito window when the last tab is closed.
+         if (mSupportedProfileType == SupportedProfileType.OFF_THE_RECORD) {
+             return true;
+diff --git a/chrome/android/java/src/org/chromium/chrome/browser/multiwindow/MultiInstanceManagerApi31.java b/chrome/android/java/src/org/chromium/chrome/browser/multiwindow/MultiInstanceManagerApi31.java
+index f0043585f8..9df328601d 100644
+--- a/chrome/android/java/src/org/chromium/chrome/browser/multiwindow/MultiInstanceManagerApi31.java
++++ b/chrome/android/java/src/org/chromium/chrome/browser/multiwindow/MultiInstanceManagerApi31.java
+@@ -1561,6 +1561,11 @@ class MultiInstanceManagerApi31 extends MultiInstanceManagerImpl implements Acti
+      */
+     @Override
+     public boolean closeChromeWindowIfEmpty(int instanceId) {
++        if (ContextUtils.getAppSharedPreferences()
++                .getBoolean("keep_app_open_when_all_tabs_closed", false)) {
++            return false;
++        }
++
+         if (instanceId != INVALID_WINDOW_ID) {
+             TabModelSelector selector =
+                     TabWindowManagerSingleton.getInstance().getTabModelSelectorById(instanceId);
+diff --git a/chrome/android/java/src/org/chromium/chrome/browser/tabmodel/TabModelImpl.java b/chrome/android/java/src/org/chromium/chrome/browser/tabmodel/TabModelImpl.java
+index fe4f47e7a6..7bee8b939d 100644
+--- a/chrome/android/java/src/org/chromium/chrome/browser/tabmodel/TabModelImpl.java
++++ b/chrome/android/java/src/org/chromium/chrome/browser/tabmodel/TabModelImpl.java
+@@ -8,6 +8,7 @@ import static org.chromium.build.NullUtil.assumeNonNull;
+ 
+ import android.app.Activity;
+ 
++import org.chromium.base.ContextUtils;
+ import org.chromium.base.MathUtils;
+ import org.chromium.base.ObserverList;
+ import org.chromium.base.Token;
+@@ -663,7 +664,9 @@ public class TabModelImpl extends TabModelJniBridge {
+         if (uponExit
+                 || !allowUndo
+                 || tabClosingSource == TabClosingSource.TABLET_TAB_STRIP
+-                || HomepageManager.getInstance().shouldCloseAppWithZeroTabs()) {
++                || (HomepageManager.getInstance().shouldCloseAppWithZeroTabs()
++                        && !ContextUtils.getAppSharedPreferences()
++                                .getBoolean("keep_app_open_when_all_tabs_closed", false))) {
+             commitAllTabClosures();
+ 
+             for (int i = 0; i < getCount(); i++) getTabAtChecked(i).setClosing(true);
+diff --git a/components/browser_ui/accessibility/android/java/res/xml/accessibility_preferences.xml b/components/browser_ui/accessibility/android/java/res/xml/accessibility_preferences.xml
+index 36f207d477..37e9909b77 100644
+--- a/components/browser_ui/accessibility/android/java/res/xml/accessibility_preferences.xml
++++ b/components/browser_ui/accessibility/android/java/res/xml/accessibility_preferences.xml
+@@ -16,6 +16,12 @@ found in the LICENSE file.
+         android:summary="@string/enable_accessibility_summary"
+         android:title="@string/enable_accessibility_title" />
+ 
++    <org.chromium.components.browser_ui.settings.ChromeSwitchPreference
++        android:key="keep_app_open_when_all_tabs_closed"
++        android:defaultValue="false"
++        android:summary="@string/keep_app_open_when_all_tabs_closed_summary"
++        android:title="@string/keep_app_open_when_all_tabs_closed_title" />
++
+     <org.chromium.components.browser_ui.settings.ChromeSwitchPreference
+         android:key="page_zoom_include_os_adjustment"
+         android:summary="@string/page_zoom_include_os_adjustment_summary"
+diff --git a/components/browser_ui/accessibility/android/java/src/org/chromium/components/browser_ui/accessibility/AccessibilitySettings.java b/components/browser_ui/accessibility/android/java/src/org/chromium/components/browser_ui/accessibility/AccessibilitySettings.java
+index 06c3c69b36..8d32423f8d 100644
+--- a/components/browser_ui/accessibility/android/java/src/org/chromium/components/browser_ui/accessibility/AccessibilitySettings.java
++++ b/components/browser_ui/accessibility/android/java/src/org/chromium/components/browser_ui/accessibility/AccessibilitySettings.java
+@@ -45,6 +45,8 @@ public class AccessibilitySettings extends ChromeBaseSettingsFragment
+     public static final String PREF_ZOOM_INFO = "zoom_info";
+     public static final String PREF_IMAGE_DESCRIPTIONS = "image_descriptions";
+     public static final String PREF_CARET_BROWSING = "caret_browsing";
++    private static final String PREF_KEEP_APP_OPEN_WHEN_ALL_TABS_CLOSED =
++            "keep_app_open_when_all_tabs_closed";
+ 
+     private BooleanPreferenceDelegate mForceTabletUIDelegate;
+     static final String PREF_FORCE_TABLET_UI = "force_tablet_ui";
+@@ -213,6 +215,15 @@ public class AccessibilitySettings extends ChromeBaseSettingsFragment
+         } else {
+             mCaretBrowsingPref.setVisible(false);
+         }
++
++        ChromeSwitchPreference keepAppOpenWhenAllTabsClosed =
++                findPreference(PREF_KEEP_APP_OPEN_WHEN_ALL_TABS_CLOSED);
++        if (keepAppOpenWhenAllTabsClosed != null) {
++            keepAppOpenWhenAllTabsClosed.setChecked(
++                    ContextUtils.getAppSharedPreferences()
++                            .getBoolean(PREF_KEEP_APP_OPEN_WHEN_ALL_TABS_CLOSED, false));
++            keepAppOpenWhenAllTabsClosed.setOnPreferenceChangeListener(this);
++        }
+     }
+ 
+     @Override
+@@ -262,6 +273,11 @@ public class AccessibilitySettings extends ChromeBaseSettingsFragment
+             OmniboxFeatures.setJumpStartOmniboxEnabled((Boolean) newValue);
+         } else if (PREF_CARET_BROWSING.equals(preference.getKey())) {
+             mDelegate.setCaretBrowsingEnabled((Boolean) newValue);
++        } else if (PREF_KEEP_APP_OPEN_WHEN_ALL_TABS_CLOSED.equals(preference.getKey())) {
++            ContextUtils.getAppSharedPreferences()
++                    .edit()
++                    .putBoolean(PREF_KEEP_APP_OPEN_WHEN_ALL_TABS_CLOSED, (Boolean) newValue)
++                    .apply();
+         }
+         return true;
+     }
+-- 
+2.47.3
+

@@ -1,0 +1,402 @@
+From ab25a441ed75ab7df8f240104ca49f38fbd6e8d6 Mon Sep 17 00:00:00 2001
+From: cromite <cromite@local>
+Date: Thu, 18 Dec 2025 23:22:11 +0000
+Subject: [PATCH] Add external download manager option
+
+FILE:Add-external-download-manager.patch
+---
+ chrome/browser/download/android/BUILD.gn      |  1 +
+ .../android/download_dialog_bridge.cc         |  2 +
+ .../download/android/download_dialog_bridge.h |  2 +
+ .../android/java/res/values/strings.xml       | 12 +++
+ .../java/res/xml/download_preferences.xml     |  7 ++
+ .../download/DownloadDialogBridge.java        | 49 +++++++++
+ .../download/settings/DownloadSettings.java   | 99 +++++++++++++++++++
+ .../chrome_download_manager_delegate.cc       |  5 +-
+ .../chrome_download_manager_delegate.h        |  1 +
+ 9 files changed, 177 insertions(+), 1 deletion(-)
+ create mode 100644 chrome/browser/download/android/java/res/values/strings.xml
+
+diff --git a/chrome/browser/download/android/BUILD.gn b/chrome/browser/download/android/BUILD.gn
+index 99287bdb3f..9abb067f24 100644
+--- a/chrome/browser/download/android/BUILD.gn
++++ b/chrome/browser/download/android/BUILD.gn
+@@ -237,6 +237,7 @@ android_resources("java_resources") {
+     "java/res/layout/download_location_spinner_dropdown_item.xml",
+     "java/res/layout/download_location_spinner_item.xml",
+     "java/res/values/dimens.xml",
++    "java/res/values/strings.xml",
+     "java/res/values/styles.xml",
+     "java/res/xml/download_preferences.xml",
+   ]
+diff --git a/chrome/browser/download/android/download_dialog_bridge.cc b/chrome/browser/download/android/download_dialog_bridge.cc
+index 4b702863f3..93cb0a5314 100644
+--- a/chrome/browser/download/android/download_dialog_bridge.cc
++++ b/chrome/browser/download/android/download_dialog_bridge.cc
+@@ -47,6 +47,7 @@ void DownloadDialogBridge::ShowDialog(
+     net::NetworkChangeNotifier::ConnectionType connection_type,
+     DownloadLocationDialogType dialog_type,
+     const base::FilePath& suggested_path,
++    const std::string& url_to_download,
+     Profile* profile,
+     DialogCallback dialog_callback) {
+   if (!native_window)
+@@ -78,6 +79,7 @@ void DownloadDialogBridge::ShowDialog(
+       env, java_obj_, native_window->GetJavaObject(),
+       static_cast<long>(total_bytes), static_cast<int>(connection_type),
+       static_cast<int>(dialog_type), suggested_path.AsUTF8Unsafe(),
++      url_to_download,
+       profile->GetJavaObject());
+ }
+ 
+diff --git a/chrome/browser/download/android/download_dialog_bridge.h b/chrome/browser/download/android/download_dialog_bridge.h
+index 2e2317a685..edcf4cb19c 100644
+--- a/chrome/browser/download/android/download_dialog_bridge.h
++++ b/chrome/browser/download/android/download_dialog_bridge.h
+@@ -6,6 +6,7 @@
+ #define CHROME_BROWSER_DOWNLOAD_ANDROID_DOWNLOAD_DIALOG_BRIDGE_H_
+ 
+ #include <optional>
++#include <string>
+ 
+ #include "base/android/jni_android.h"
+ #include "base/android/scoped_java_ref.h"
+@@ -49,6 +50,7 @@ class DownloadDialogBridge {
+       net::NetworkChangeNotifier::ConnectionType connection_type,
+       DownloadLocationDialogType dialog_type,
+       const base::FilePath& suggested_path,
++      const std::string& url_to_download,
+       Profile* profile,
+       DialogCallback dialog_callback);
+ 
+diff --git a/chrome/browser/download/android/java/res/values/strings.xml b/chrome/browser/download/android/java/res/values/strings.xml
+new file mode 100644
+index 0000000000..88252db038
+--- /dev/null
++++ b/chrome/browser/download/android/java/res/values/strings.xml
+@@ -0,0 +1,12 @@
++<?xml version="1.0" encoding="utf-8"?>
++<resources>
++    <string name="download_preferences_enable_external_download_manager_title">
++        External download manager
++    </string>
++    <string name="download_preferences_enable_external_download_manager_summary">
++        Use an external download manager (e.g. ADM, 1DM)
++    </string>
++    <string name="download_preferences_external_download_manager_picker_title">
++        Download manager
++    </string>
++</resources>
+diff --git a/chrome/browser/download/android/java/res/xml/download_preferences.xml b/chrome/browser/download/android/java/res/xml/download_preferences.xml
+index 6d14eb7186..5c6924b81f 100644
+--- a/chrome/browser/download/android/java/res/xml/download_preferences.xml
++++ b/chrome/browser/download/android/java/res/xml/download_preferences.xml
+@@ -22,4 +22,11 @@ found in the LICENSE file.
+         android:key="auto_open_pdf_enabled"
+         android:title="@string/auto_open_pdf_enabled_title"
+         android:summaryOff="@string/text_off"/>
++
++    <org.chromium.components.browser_ui.settings.ChromeSwitchPreference
++        android:key="enable_external_download_manager"
++        android:title="@string/download_preferences_enable_external_download_manager_title"
++        android:summary="@string/download_preferences_enable_external_download_manager_summary"
++        android:summaryOn="@string/download_preferences_enable_external_download_manager_summary"
++        android:summaryOff="@string/download_preferences_enable_external_download_manager_summary" />
+ </PreferenceScreen>
+diff --git a/chrome/browser/download/android/java/src/org/chromium/chrome/browser/download/DownloadDialogBridge.java b/chrome/browser/download/android/java/src/org/chromium/chrome/browser/download/DownloadDialogBridge.java
+index ee1544761c..92dbb24975 100644
+--- a/chrome/browser/download/android/java/src/org/chromium/chrome/browser/download/DownloadDialogBridge.java
++++ b/chrome/browser/download/android/java/src/org/chromium/chrome/browser/download/DownloadDialogBridge.java
+@@ -8,6 +8,10 @@ import static org.chromium.build.NullUtil.assumeNonNull;
+ 
+ import android.app.Activity;
+ import android.content.Context;
++import android.content.Intent;
++import android.content.SharedPreferences;
++import android.net.Uri;
++import android.text.TextUtils;
+ 
+ import androidx.annotation.VisibleForTesting;
+ 
+@@ -15,6 +19,7 @@ import org.jni_zero.CalledByNative;
+ import org.jni_zero.JniType;
+ import org.jni_zero.NativeMethods;
+ 
++import org.chromium.base.ContextUtils;
+ import org.chromium.build.annotations.NullMarked;
+ import org.chromium.build.annotations.Nullable;
+ import org.chromium.chrome.browser.download.DownloadLocationDialogMetrics.DownloadLocationSuggestionEvent;
+@@ -35,6 +40,12 @@ import org.chromium.ui.modaldialog.ModalDialogManagerHolder;
+ /** Glues download dialogs UI code and handles the communication to download native backend. */
+ @NullMarked
+ public class DownloadDialogBridge implements DownloadLocationDialogController {
++    private static final String PREF_ENABLE_EXTERNAL_DOWNLOAD_MANAGER = "enable_external_download_manager";
++    private static final String PREF_SELECTED_EXTERNAL_DOWNLOAD_MANAGER_PACKAGE_NAME =
++            "selected_external_download_manager_package_name";
++    private static final String PREF_SELECTED_EXTERNAL_DOWNLOAD_MANAGER_ACTIVITY_NAME =
++            "selected_external_download_manager_activity_name";
++
+     private long mNativeDownloadDialogBridge;
+ 
+     private final DownloadLocationDialogCoordinator mLocationDialog;
+@@ -79,6 +90,7 @@ public class DownloadDialogBridge implements DownloadLocationDialogController {
+             @ConnectionType int connectionType,
+             @DownloadLocationDialogType int dialogType,
+             @JniType("std::string") String suggestedPath,
++            @JniType("std::string") String urlToDownload,
+             Profile profile) {
+         mWindowAndroid = windowAndroid;
+         mProfile = profile;
+@@ -88,6 +100,11 @@ public class DownloadDialogBridge implements DownloadLocationDialogController {
+             return;
+         }
+ 
++        if (maybeStartExternalDownloadManager(activity, urlToDownload)) {
++            onCancel();
++            return;
++        }
++
+         DownloadDirectoryProvider.getInstance()
+                 .getAllDirectoriesOptions(
+                         (dirs) -> {
+@@ -119,6 +136,38 @@ public class DownloadDialogBridge implements DownloadLocationDialogController {
+                         });
+     }
+ 
++    private static boolean maybeStartExternalDownloadManager(Activity activity, String urlToDownload) {
++        if (TextUtils.isEmpty(urlToDownload)) return false;
++        String urlLower = urlToDownload.toLowerCase();
++        if (!(urlLower.startsWith("http:")
++                || urlLower.startsWith("https:")
++                || urlLower.startsWith("magnet:")
++                || urlLower.startsWith("ftp:"))) {
++            return false;
++        }
++
++        // Avoid breaking extension installation flows.
++        if (urlLower.contains(".googleusercontent.com/crx")) return false;
++
++        SharedPreferences sharedPreferences = ContextUtils.getAppSharedPreferences();
++        if (!sharedPreferences.getBoolean(PREF_ENABLE_EXTERNAL_DOWNLOAD_MANAGER, false)) return false;
++
++        String packageName = sharedPreferences.getString(PREF_SELECTED_EXTERNAL_DOWNLOAD_MANAGER_PACKAGE_NAME, "");
++        String activityName = sharedPreferences.getString(PREF_SELECTED_EXTERNAL_DOWNLOAD_MANAGER_ACTIVITY_NAME, "");
++        if (TextUtils.isEmpty(packageName) || TextUtils.isEmpty(activityName)) return false;
++
++        Intent intent = new Intent(Intent.ACTION_VIEW, Uri.parse(urlToDownload));
++        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
++        intent.setClassName(packageName, activityName);
++
++        try {
++            activity.startActivity(intent);
++            return true;
++        } catch (android.content.ActivityNotFoundException ignored) {
++            return false;
++        }
++    }
++
+     @VisibleForTesting
+     void showDialog(
+             Context context,
+diff --git a/chrome/browser/download/android/java/src/org/chromium/chrome/browser/download/settings/DownloadSettings.java b/chrome/browser/download/android/java/src/org/chromium/chrome/browser/download/settings/DownloadSettings.java
+index b35417e08f..9ca4a4fe42 100644
+--- a/chrome/browser/download/android/java/src/org/chromium/chrome/browser/download/settings/DownloadSettings.java
++++ b/chrome/browser/download/android/java/src/org/chromium/chrome/browser/download/settings/DownloadSettings.java
+@@ -4,14 +4,24 @@
+ 
+ package org.chromium.chrome.browser.download.settings;
+ 
++import android.app.Activity;
++import android.content.ComponentName;
++import android.content.Intent;
++import android.content.SharedPreferences;
+ import android.os.Bundle;
++import android.text.TextUtils;
+ 
+ import androidx.preference.Preference;
+ 
++import java.util.ArrayList;
++import java.util.List;
++import java.util.Locale;
++
+ import org.chromium.base.supplier.ObservableSupplier;
+ import org.chromium.base.supplier.ObservableSupplierImpl;
+ import org.chromium.build.annotations.NullMarked;
+ import org.chromium.build.annotations.Nullable;
++import org.chromium.base.ContextUtils;
+ import org.chromium.chrome.browser.download.DownloadDialogBridge;
+ import org.chromium.chrome.browser.download.DownloadDirectoryProvider;
+ import org.chromium.chrome.browser.download.DownloadPromptStatus;
+@@ -33,11 +43,19 @@ public class DownloadSettings extends ChromeBaseSettingsFragment
+     public static final String PREF_LOCATION_CHANGE = "location_change";
+     public static final String PREF_LOCATION_PROMPT_ENABLED = "location_prompt_enabled";
+     public static final String PREF_AUTO_OPEN_PDF_ENABLED = "auto_open_pdf_enabled";
++    public static final String PREF_ENABLE_EXTERNAL_DOWNLOAD_MANAGER = "enable_external_download_manager";
++
++    private static final String PREF_SELECTED_EXTERNAL_DOWNLOAD_MANAGER_PACKAGE_NAME =
++            "selected_external_download_manager_package_name";
++    private static final String PREF_SELECTED_EXTERNAL_DOWNLOAD_MANAGER_ACTIVITY_NAME =
++            "selected_external_download_manager_activity_name";
++    private static final int REQUEST_CODE_EXTERNAL_DOWNLOAD_MANAGER_PICKER = 4242;
+ 
+     private DownloadLocationPreference mLocationChangePref;
+     private ChromeSwitchPreference mLocationPromptEnabledPref;
+     private ManagedPreferenceDelegate mLocationPromptEnabledPrefDelegate;
+     private ChromeSwitchPreference mAutoOpenPdfEnabledPref;
++    private @Nullable ChromeSwitchPreference mExternalDownloadManagerPref;
+     private final ObservableSupplierImpl<String> mPageTitle = new ObservableSupplierImpl<>();
+ 
+     @Override
+@@ -80,6 +98,12 @@ public class DownloadSettings extends ChromeBaseSettingsFragment
+                             : getActivity().getString(R.string.auto_open_pdf_enabled_description);
+             mAutoOpenPdfEnabledPref.setSummaryOn(summary);
+         }
++
++        mExternalDownloadManagerPref =
++                (ChromeSwitchPreference) findPreference(PREF_ENABLE_EXTERNAL_DOWNLOAD_MANAGER);
++        if (mExternalDownloadManagerPref != null) {
++            mExternalDownloadManagerPref.setOnPreferenceChangeListener(this);
++        }
+     }
+ 
+     @Override
+@@ -126,6 +150,73 @@ public class DownloadSettings extends ChromeBaseSettingsFragment
+                     UserPrefs.get(getProfile()).getBoolean(Pref.AUTO_OPEN_PDF_ENABLED));
+             mAutoOpenPdfEnabledPref.setEnabled(true);
+         }
++
++        if (mExternalDownloadManagerPref != null) {
++            SharedPreferences sharedPreferences = ContextUtils.getAppSharedPreferences();
++            boolean enabled = sharedPreferences.getBoolean(PREF_ENABLE_EXTERNAL_DOWNLOAD_MANAGER, false);
++            mExternalDownloadManagerPref.setChecked(enabled);
++
++            if (enabled) {
++                String packageName =
++                        sharedPreferences.getString(PREF_SELECTED_EXTERNAL_DOWNLOAD_MANAGER_PACKAGE_NAME, "");
++                if (!TextUtils.isEmpty(packageName)) {
++                    mExternalDownloadManagerPref.setSummary(packageName);
++                }
++            } else {
++                mExternalDownloadManagerPref.setSummary(
++                        R.string.download_preferences_enable_external_download_manager_summary);
++            }
++        }
++    }
++
++    @Override
++    public void onActivityResult(int requestCode, int resultCode, @Nullable Intent data) {
++        super.onActivityResult(requestCode, resultCode, data);
++
++        if (requestCode != REQUEST_CODE_EXTERNAL_DOWNLOAD_MANAGER_PICKER
++                || resultCode != Activity.RESULT_OK
++                || data == null) {
++            return;
++        }
++
++        ComponentName componentName = data.getComponent();
++        if (componentName == null) return;
++
++        SharedPreferences.Editor editor = ContextUtils.getAppSharedPreferences().edit();
++        editor.putString(
++                PREF_SELECTED_EXTERNAL_DOWNLOAD_MANAGER_PACKAGE_NAME, componentName.getPackageName());
++        editor.putString(
++                PREF_SELECTED_EXTERNAL_DOWNLOAD_MANAGER_ACTIVITY_NAME, componentName.getClassName());
++        editor.apply();
++
++        updateDownloadSettings();
++    }
++
++    private void showExternalDownloadManagerPicker() {
++        Activity activity = getActivity();
++        if (activity == null) return;
++
++        Intent baseIntent = new Intent(Intent.ACTION_VIEW);
++        baseIntent.setData(android.net.Uri.parse("http://test.com/file.rar"));
++
++        List<Intent> initialIntents = new ArrayList<>();
++        for (android.content.pm.ResolveInfo resolveInfo :
++                activity.getPackageManager().queryIntentActivities(baseIntent, 0)) {
++            String packageName = resolveInfo.activityInfo.packageName;
++            if (packageName == null) continue;
++            if (packageName.equalsIgnoreCase(activity.getPackageName())) continue;
++            Intent targeted = new Intent(Intent.ACTION_VIEW);
++            targeted.setPackage(packageName.toLowerCase(Locale.ROOT));
++            initialIntents.add(targeted);
++        }
++
++        Intent pickIntent = new Intent(Intent.ACTION_PICK_ACTIVITY);
++        pickIntent.putExtra(
++                Intent.EXTRA_TITLE,
++                getString(R.string.download_preferences_external_download_manager_picker_title));
++        pickIntent.putExtra(Intent.EXTRA_INTENT, baseIntent);
++        pickIntent.putExtra(Intent.EXTRA_INITIAL_INTENTS, initialIntents.toArray(new Intent[0]));
++        startActivityForResult(pickIntent, REQUEST_CODE_EXTERNAL_DOWNLOAD_MANAGER_PICKER);
+     }
+ 
+     // Preference.OnPreferenceChangeListener implementation.
+@@ -145,6 +236,14 @@ public class DownloadSettings extends ChromeBaseSettingsFragment
+             }
+         } else if (PREF_AUTO_OPEN_PDF_ENABLED.equals(preference.getKey())) {
+             UserPrefs.get(getProfile()).setBoolean(Pref.AUTO_OPEN_PDF_ENABLED, (boolean) newValue);
++        } else if (PREF_ENABLE_EXTERNAL_DOWNLOAD_MANAGER.equals(preference.getKey())) {
++            SharedPreferences.Editor editor = ContextUtils.getAppSharedPreferences().edit();
++            editor.putBoolean(PREF_ENABLE_EXTERNAL_DOWNLOAD_MANAGER, (boolean) newValue);
++            editor.apply();
++
++            if ((boolean) newValue) {
++                showExternalDownloadManagerPicker();
++            }
+         }
+         return true;
+     }
+diff --git a/chrome/browser/download/chrome_download_manager_delegate.cc b/chrome/browser/download/chrome_download_manager_delegate.cc
+index 81d5072148..b58dbf0f85 100644
+--- a/chrome/browser/download/chrome_download_manager_delegate.cc
++++ b/chrome/browser/download/chrome_download_manager_delegate.cc
+@@ -638,13 +638,14 @@ void ChromeDownloadManagerDelegate::ShowDownloadDialog(
+     int64_t total_bytes,
+     DownloadLocationDialogType dialog_type,
+     const base::FilePath& suggested_path,
++    const std::string& url_to_download,
+     DownloadDialogBridge::DialogCallback callback) {
+   DCHECK(download_dialog_bridge_);
+   auto connection_type = net::NetworkChangeNotifier::GetConnectionType();
+ 
+   download_dialog_bridge_->ShowDialog(
+       native_window, total_bytes, connection_type, dialog_type, suggested_path,
+-      profile_, std::move(callback));
++      url_to_download, profile_, std::move(callback));
+ }
+ 
+ void ChromeDownloadManagerDelegate::SetDownloadDialogBridgeForTesting(
+@@ -1508,6 +1509,7 @@ void ChromeDownloadManagerDelegate::RequestConfirmation(
+     gfx::NativeWindow native_window = web_contents->GetTopLevelNativeWindow();
+     ShowDownloadDialog(
+         native_window, download->GetTotalBytes(), dialog_type, suggested_path,
++        download->GetURL().spec(),
+         base::BindOnce(&OnDownloadDialogClosed, std::move(callback)));
+     return;
+ 
+@@ -1622,6 +1624,7 @@ void ChromeDownloadManagerDelegate::GenerateUniqueFileNameDone(
+         ShowDownloadDialog(
+             native_window, 0 /* total_bytes */,
+             DownloadLocationDialogType::NAME_CONFLICT, target_path,
++            download ? download->GetURL().spec() : std::string(),
+             base::BindOnce(&OnDownloadDialogClosed, std::move(callback)));
+         return;
+     }
+diff --git a/chrome/browser/download/chrome_download_manager_delegate.h b/chrome/browser/download/chrome_download_manager_delegate.h
+index ee5b13f346..a42832b856 100644
+--- a/chrome/browser/download/chrome_download_manager_delegate.h
++++ b/chrome/browser/download/chrome_download_manager_delegate.h
+@@ -99,6 +99,7 @@ class ChromeDownloadManagerDelegate
+                           int64_t total_bytes,
+                           DownloadLocationDialogType dialog_type,
+                           const base::FilePath& suggested_path,
++                          const std::string& url_to_download,
+                           DownloadDialogBridge::DialogCallback callback);
+ 
+   void SetDownloadDialogBridgeForTesting(DownloadDialogBridge* bridge);
+-- 
+2.47.3
+
