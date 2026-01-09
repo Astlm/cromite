@@ -128,12 +128,6 @@ new file mode 100644
 +        app:featureName="maylaunchurl-uses-separate-storage-partition"
 +        app:needRestart="true" />
 +    <org.chromium.components.browser_ui.settings.ChromeSwitchPreference
-+        android:key="allow_external_intent_requests"
-+        android:title="@string/allow_external_intent_requests_title"
-+        android:summary="@string/allow_external_intent_requests_summary"
-+        app:featureName="AllowExternalIntentRequests"
-+        app:needRestart="false" />
-+    <org.chromium.components.browser_ui.settings.ChromeSwitchPreference
 +        android:key="use_tab_switcher_list_mode"
 +        android:title="@string/tab_switcher_list_mode_title"
 +        android:summary="@string/tab_switcher_list_mode_summary"
@@ -181,10 +175,6 @@ new file mode 100644
 +
 +    <PreferenceCategory
 +        android:title="@string/services_category_title"/>
-+    <org.chromium.chrome.browser.about_settings.HyperlinkPreference
-+        android:key="proxy"
-+        android:title="@string/proxy_title"
-+        app:url="@string/proxy_url" />
 +    <org.chromium.chrome.browser.about_settings.HyperlinkPreference
 +        android:key="cromite_flags"
 +        android:title="@string/cromite_flags_title"
