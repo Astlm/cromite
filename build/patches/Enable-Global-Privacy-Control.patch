@@ -72,8 +72,7 @@ diff --git a/chrome/android/chrome_java_resources.gni b/chrome/android/chrome_ja
 diff --git a/chrome/android/chrome_java_sources.gni b/chrome/android/chrome_java_sources.gni
 --- a/chrome/android/chrome_java_sources.gni
 +++ b/chrome/android/chrome_java_sources.gni
-@@ -940,6 +940,7 @@ chrome_java_sources = [
-   "java/src/org/chromium/chrome/browser/settings/AdBlockPreferences.java",
+@@ -940,5 +940,6 @@ chrome_java_sources = [
    "java/src/org/chromium/chrome/browser/policy/PolicyAuditor.java",
    "java/src/org/chromium/chrome/browser/policy/PolicyAuditorBridge.java",
 +  "java/src/org/chromium/chrome/browser/privacy/settings/GpcSettings.java",

@@ -85,7 +85,7 @@ diff --git a/cc/scheduler/scheduler_state_machine.cc b/cc/scheduler/scheduler_st
 diff --git a/chrome/android/java/res/xml/privacy_preferences.xml b/chrome/android/java/res/xml/privacy_preferences.xml
 --- a/chrome/android/java/res/xml/privacy_preferences.xml
 +++ b/chrome/android/java/res/xml/privacy_preferences.xml
-@@ -104,6 +104,12 @@ found in the LICENSE file.
+@@ -82,6 +82,12 @@ found in the LICENSE file.
          android:summary="@string/tab_switcher_list_mode_summary"
          app:featureName="TabSwitcherListMode"
          app:needRestart="true" />
@@ -95,9 +95,11 @@ diff --git a/chrome/android/java/res/xml/privacy_preferences.xml b/chrome/androi
 +        android:summary="@string/throttle_main_thread_to_60hz_summary"
 +        app:featureName="throttle-main-thread-to-60hz"
 +        app:needRestart="true" />
-     <PreferenceCategory
-         android:key="security_section"
-       android:title="@string/security_section_title" />
+     <Preference
+         android:key="preload_pages"
+         android:title="@string/preload_pages_title"
+         android:summary="@string/preload_pages_summary"
+         android:fragment="org.chromium.chrome.browser.prefetch.settings.PreloadPagesSettingsFragment" />
 diff --git a/chrome/browser/about_flags.cc b/chrome/browser/about_flags.cc
 --- a/chrome/browser/about_flags.cc
 +++ b/chrome/browser/about_flags.cc
