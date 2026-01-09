@@ -621,9 +621,11 @@ diff --git a/components/browser_ui/accessibility/android/java/src/org/chromium/c
  
  /** Fragment to keep track of all the accessibility related preferences. */
  @NullMarked
-@@ -45,6 +46,9 @@ public class AccessibilitySettings extends ChromeBaseSettingsFragment
+@@ -45,8 +46,11 @@ public class AccessibilitySettings extends ChromeBaseSettingsFragment
      public static final String PREF_IMAGE_DESCRIPTIONS = "image_descriptions";
      public static final String PREF_CARET_BROWSING = "caret_browsing";
+     private static final String PREF_KEEP_APP_OPEN_WHEN_ALL_TABS_CLOSED =
+             "keep_app_open_when_all_tabs_closed";
  
 +    private BooleanPreferenceDelegate mForceTabletUIDelegate;
 +    static final String PREF_FORCE_TABLET_UI = "force_tablet_ui";
