@@ -101,9 +101,10 @@ diff --git a/components/browser_ui/accessibility/android/java/res/xml/accessibil
 index 36f207d477..37e9909b77 100644
 --- a/components/browser_ui/accessibility/android/java/res/xml/accessibility_preferences.xml
 +++ b/components/browser_ui/accessibility/android/java/res/xml/accessibility_preferences.xml
-@@ -16,6 +16,12 @@ found in the LICENSE file.
-         android:summary="@string/enable_accessibility_summary"
-         android:title="@string/enable_accessibility_title" />
+@@ -10,6 +10,12 @@
+     <Preference
+         android:key="zoom_info"
+         android:title="@string/zoom_info_preference_title"/>
  
 +    <org.chromium.components.browser_ui.settings.ChromeSwitchPreference
 +        android:key="keep_app_open_when_all_tabs_closed"
@@ -125,8 +126,8 @@ index 06c3c69b36..8d32423f8d 100644
 +    private static final String PREF_KEEP_APP_OPEN_WHEN_ALL_TABS_CLOSED =
 +            "keep_app_open_when_all_tabs_closed";
  
-     private BooleanPreferenceDelegate mForceTabletUIDelegate;
-     static final String PREF_FORCE_TABLET_UI = "force_tablet_ui";
+     private PageZoomPreference mPageZoomDefaultZoomPref;
+     private ChromeSwitchPreference mPageZoomIncludeOSAdjustment;
 @@ -213,6 +215,15 @@ public class AccessibilitySettings extends ChromeBaseSettingsFragment
          } else {
              mCaretBrowsingPref.setVisible(false);
@@ -157,4 +158,3 @@ index 06c3c69b36..8d32423f8d 100644
      }
 -- 
 2.47.3
-
