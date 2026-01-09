@@ -37,8 +37,8 @@ diff --git a/components/browser_ui/accessibility/android/java/res/xml/accessibil
 +        android:title="@string/enable_accessibility_title" />
 +
      <org.chromium.components.browser_ui.settings.ChromeSwitchPreference
-         android:key="page_zoom_include_os_adjustment"
-         android:summary="@string/page_zoom_include_os_adjustment_summary"
+         android:key="keep_app_open_when_all_tabs_closed"
+         android:defaultValue="false"
 diff --git a/content/public/android/java/src/org/chromium/content/browser/accessibility/WebContentsAccessibilityImpl.java b/content/public/android/java/src/org/chromium/content/browser/accessibility/WebContentsAccessibilityImpl.java
 --- a/content/public/android/java/src/org/chromium/content/browser/accessibility/WebContentsAccessibilityImpl.java
 +++ b/content/public/android/java/src/org/chromium/content/browser/accessibility/WebContentsAccessibilityImpl.java

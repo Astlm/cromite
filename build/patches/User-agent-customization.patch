@@ -1058,8 +1058,9 @@ diff --git a/chrome/browser/tabwindow/internal/android/java/src/org/chromium/chr
 diff --git a/chrome/browser/ui/android/strings/android_chrome_strings.grd b/chrome/browser/ui/android/strings/android_chrome_strings.grd
 --- a/chrome/browser/ui/android/strings/android_chrome_strings.grd
 +++ b/chrome/browser/ui/android/strings/android_chrome_strings.grd
-@@ -238,6 +238,32 @@ CHAR_LIMIT guidelines:
-         Visit help page
+@@ -223,7 +223,33 @@
+       <message name="IDS_SEARCH_IN_SETTINGS_HINT" desc='Hint text in search in settings widget. [CHAR_LIMIT=32]'>
+         Search settings
        </message>
  
 +      <!-- User Agent settings -->
