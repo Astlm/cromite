@@ -694,7 +694,7 @@ diff --git a/services/firewall/tools/annotations.xml b/services/firewall/tools/a
 new file mode 100644
 --- /dev/null
 +++ b/services/firewall/tools/annotations.xml
-@@ -0,0 +1,503 @@
+@@ -0,0 +1,502 @@
 +<?xml version="1.0"?>
 +<!--
 +    This file is part of Bromite.
@@ -1181,7 +1181,6 @@ new file mode 100644
 + <item id="bromite_inline_update_controller" added_in_milestone="126" hash_code="88618481" content_hash_code="061ad1b5" os_list="linux,windows,android" file_path="chrome/android/java/src/org/chromium/chrome/browser/omaha/inline/BromiteInlineUpdateController.java" />
 + <item id="download_via_toolbar_menu" added_in_milestone="126" hash_code="90651153" content_hash_code="072e7af3" os_list="linux,windows,android" file_path="chrome/browser/download/android/download_controller.cc" />
 + <item id="offline_pages_download_file" added_in_milestone="126" hash_code="94580999" content_hash_code="01ae83d8" os_list="linux,windows,android" file_path="chrome/browser/offline_pages/android/downloads/offline_page_download_bridge.cc" />
-+ <item id="adblock_subscription_download" added_in_milestone="126" hash_code="8807068" content_hash_code="03359a90" os_list="linux,windows,android" file_path="components/adblock/core/subscription/ongoing_subscription_request_impl.cc" />
 + <item id="filters_update" added_in_milestone="126" hash_code="51960264" content_hash_code="070edef5" os_list="linux,windows,android" file_path="components/component_updater/download_filters_task.cc" />
 + <item id="download_via_context_menu" added_in_milestone="126" hash_code="64427392" content_hash_code="01089191" os_list="linux,windows,android" file_path="components/download/content/internal/context_menu_download.cc" />
 + <item id="webapk_icon_hasher" added_in_milestone="126" hash_code="61933932" content_hash_code="079c7adb" os_list="linux,windows,android" file_path="components/webapps/browser/android/webapk/webapk_single_icon_hasher.cc" />
@@ -1526,7 +1525,7 @@ diff --git a/services/firewall/tools/rules.xml b/services/firewall/tools/rules.x
 new file mode 100644
 --- /dev/null
 +++ b/services/firewall/tools/rules.xml
-@@ -0,0 +1,99 @@
+@@ -0,0 +1,98 @@
 +<?xml version="1.0"?>
 +<!--
 +    This file is part of Bromite.
@@ -1548,7 +1547,6 @@ new file mode 100644
 +<rules>
 + <!-- Allow autoupdates -->
 + <item id="bromite_inline_update_controller" allowed="1"/>
-+ <item id="adblock_subscription_download" allowed="1"/>
 + <item id="filters_update" allowed="1"/>
 +
 + <!-- started by the user -->

@@ -1184,23 +1184,6 @@ index 8c566a0cfc..6aa509b05a 100644
      sources += [ "chrome_extensions_browser_client_android.cc" ]
  
      deps += [
-@@ -1751,6 +1751,16 @@ source_set("chrome_extensions_browser_client") {
-       "//extensions/browser",
-       "//extensions/browser/kiosk",
-     ]
-+
-+    ### Extensions API module start
-+    sources += [
-+      "api/adblock_private/adblock_private_api.cc",
-+      "api/adblock_private/adblock_private_api.h",
-+      "api/eyeo_filtering_private/eyeo_filtering_private_api.cc",
-+      "api/eyeo_filtering_private/eyeo_filtering_private_api.h",
-+    ]
-+
-+    deps += [ "//components/adblock/content:browser" ]
-   }
- 
-   if (enable_extensions) {
 diff --git a/chrome/browser/extensions/api/chrome_extensions_api_client_android.cc b/chrome/browser/extensions/api/chrome_extensions_api_client_android.cc
 index f65a464224..7e9e62bbfe 100644
 --- a/chrome/browser/extensions/api/chrome_extensions_api_client_android.cc
@@ -3795,4 +3778,3 @@ index 9b38c07401..a4b3092d75 100644
  }
 -- 
 2.47.3
-
