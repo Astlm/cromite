@@ -42,11 +42,10 @@ License: GPL-3.0-only - https://spdx.org/licenses/GPL-3.0-only.html
  .../platform/graphics/static_bitmap_image.cc  | 154 ++++++++++++++++++
  .../platform/graphics/static_bitmap_image.h   |   2 +
  .../platform/runtime_enabled_features.json5   |   6 +
- third_party/skia/include/core/SkPixmap.h      |  16 +-
  third_party/ungoogled/BUILD.gn                |  10 ++
  third_party/ungoogled/ungoogled_switches.cc   |  15 ++
  third_party/ungoogled/ungoogled_switches.h    |  17 ++
- 25 files changed, 355 insertions(+), 16 deletions(-)
+ 24 files changed, 347 insertions(+), 8 deletions(-)
  create mode 100755 cromite_flags/chrome/browser/about_flags_cc/Multiple-fingerprinting-mitigations.inc
  create mode 100644 third_party/ungoogled/BUILD.gn
  create mode 100644 third_party/ungoogled/ungoogled_switches.cc
@@ -694,53 +693,6 @@ diff --git a/third_party/blink/renderer/platform/runtime_enabled_features.json5 
      {
        name: "Notifications",
        public: true,
-diff --git a/third_party/skia/include/core/SkPixmap.h b/third_party/skia/include/core/SkPixmap.h
---- a/third_party/skia/include/core/SkPixmap.h
-+++ b/third_party/skia/include/core/SkPixmap.h
-@@ -396,8 +396,8 @@ public:
-         @return   readable unsigned 8-bit pointer to pixel at (x, y)
-     */
-     const uint8_t* addr8(int x, int y) const {
--        SkASSERTF(x >= 0 && x < this->width(), "x=%d; width=%d\n", x, fInfo.width());
--        SkASSERTF(y >= 0 && y < this->height(), "y=%d; height=%d\n", y, fInfo.height());
-+        SkASSERTF_RELEASE(x >= 0 && x < this->width(), "x=%d; width=%d\n", x, fInfo.width());
-+        SkASSERTF_RELEASE(y >= 0 && y < this->height(), "y=%d; height=%d\n", y, fInfo.height());
-         return (const uint8_t*)((const char*)this->addr8() + (size_t)y * fRowBytes + (x << 0));
-     }
- 
-@@ -414,8 +414,8 @@ public:
-         @return   readable unsigned 16-bit pointer to pixel at (x, y)
-     */
-     const uint16_t* addr16(int x, int y) const {
--        SkASSERTF(x >= 0 && x < this->width(), "x=%d; width=%d\n", x, fInfo.width());
--        SkASSERTF(y >= 0 && y < this->height(), "y=%d; height=%d\n", y, fInfo.height());
-+        SkASSERTF_RELEASE(x >= 0 && x < this->width(), "x=%d; width=%d\n", x, fInfo.width());
-+        SkASSERTF_RELEASE(y >= 0 && y < this->height(), "y=%d; height=%d\n", y, fInfo.height());
-         return (const uint16_t*)((const char*)this->addr16() + (size_t)y * fRowBytes + (x << 1));
-     }
- 
-@@ -432,8 +432,8 @@ public:
-         @return   readable unsigned 32-bit pointer to pixel at (x, y)
-     */
-     const uint32_t* addr32(int x, int y) const {
--        SkASSERTF(x >= 0 && x < this->width(), "x=%d; width=%d\n", x, fInfo.width());
--        SkASSERTF(y >= 0 && y < this->height(), "y=%d; height=%d\n", y, fInfo.height());
-+        SkASSERTF_RELEASE(x >= 0 && x < this->width(), "x=%d; width=%d\n", x, fInfo.width());
-+        SkASSERTF_RELEASE(y >= 0 && y < this->height(), "y=%d; height=%d\n", y, fInfo.height());
-         return (const uint32_t*)((const char*)this->addr32() + (size_t)y * fRowBytes + (x << 2));
-     }
- 
-@@ -450,8 +450,8 @@ public:
-         @return   readable unsigned 64-bit pointer to pixel at (x, y)
-     */
-     const uint64_t* addr64(int x, int y) const {
--        SkASSERTF(x >= 0 && x < this->width(), "x=%d; width=%d\n", x, fInfo.width());
--        SkASSERTF(y >= 0 && y < this->height(), "y=%d; height=%d\n", y, fInfo.height());
-+        SkASSERTF_RELEASE(x >= 0 && x < this->width(), "x=%d; width=%d\n", x, fInfo.width());
-+        SkASSERTF_RELEASE(y >= 0 && y < this->height(), "y=%d; height=%d\n", y, fInfo.height());
-         return (const uint64_t*)((const char*)this->addr64() + (size_t)y * fRowBytes + (x << 3));
-     }
- 
 diff --git a/third_party/ungoogled/BUILD.gn b/third_party/ungoogled/BUILD.gn
 new file mode 100644
 --- /dev/null
