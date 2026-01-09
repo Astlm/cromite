@@ -81,6 +81,7 @@ Disable-offline-pages-in-CCT.patch
 Disable-media-router-and-remoting-by-default.patch
 Restore-Search-Ready-Omnibox-flag.patch
 Bromite-auto-updater.patch
+Fix-endpoint-fetcher-java.patch
 Replace-DoH-probe-domain-with-RIPE-domain.patch
 Increase-number-of-autocomplete-matches-to-10.patch
 Disable-requests-for-single-word-Omnibar-searches.patch
