@@ -56,6 +56,7 @@ Add-external-download-manager.patch
 Add-support-for-writing-URIs.patch
 Restore-BookmarkToolbar-setCurrentFolder.patch
 Add-bookmark-import-export-actions.patch
+Fix-external-download-manager-prompt-setting.patch
 Bookmarks-select-all-menu-entry.patch
 Add-an-always-incognito-mode.patch
 Keep-flag-to-allow-screenshots-in-Incognito-mode.patch

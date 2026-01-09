@@ -1,0 +1,134 @@
+From: cromite <cromite@local>
+Date: Thu, 9 Jan 2026 00:00:00 +0000
+Subject: Fix external download manager prompt gating
+---
+
+diff --git a/chrome/browser/download/android/java/src/org/chromium/chrome/browser/download/dialogs/DownloadLocationDialogCoordinator.java b/chrome/browser/download/android/java/src/org/chromium/chrome/browser/download/dialogs/DownloadLocationDialogCoordinator.java
+--- a/chrome/browser/download/android/java/src/org/chromium/chrome/browser/download/dialogs/DownloadLocationDialogCoordinator.java
++++ b/chrome/browser/download/android/java/src/org/chromium/chrome/browser/download/dialogs/DownloadLocationDialogCoordinator.java
+@@ -12,6 +12,7 @@
+ import android.text.TextUtils;
+ import android.view.LayoutInflater;
+ 
++import org.chromium.base.ContextUtils;
+ import org.chromium.base.metrics.RecordHistogram;
+ import org.chromium.build.annotations.Initializer;
+ import org.chromium.build.annotations.NullMarked;
+@@ -61,6 +62,13 @@
+ 
+     private boolean mLocationDialogManaged;
+ 
++    private static final String PREF_ENABLE_EXTERNAL_DOWNLOAD_MANAGER = "enable_external_download_manager";
++
++    private static boolean isExternalDownloadManagerEnabled() {
++        return ContextUtils.getAppSharedPreferences()
++                .getBoolean(PREF_ENABLE_EXTERNAL_DOWNLOAD_MANAGER, false);
++    }
++
+     /**
+      * Initializes the download location dialog.
+      * @param controller Receives events from download location dialog.
+@@ -177,9 +185,11 @@
+                 (isChecked) -> {
+                     DownloadDialogBridge.setPromptForDownloadAndroid(
+                             assertNonNull(mProfile),
+-                            isChecked
+-                                    ? DownloadPromptStatus.DONT_SHOW
+-                                    : DownloadPromptStatus.SHOW_PREFERENCE);
++                            isExternalDownloadManagerEnabled()
++                                    ? DownloadPromptStatus.SHOW_PREFERENCE
++                                    : (isChecked
++                                            ? DownloadPromptStatus.DONT_SHOW
++                                            : DownloadPromptStatus.SHOW_PREFERENCE));
+                 },
+                 new DownloadLocationHelperImpl(mProfile));
+         mPropertyModelChangeProcessor =
+@@ -219,8 +229,9 @@
+         assumeNonNull(mProfile);
+ 
+         boolean isInitial =
+-                DownloadDialogBridge.getPromptForDownloadAndroid(mProfile)
+-                        == DownloadPromptStatus.SHOW_INITIAL;
++                !isExternalDownloadManagerEnabled()
++                        && DownloadDialogBridge.getPromptForDownloadAndroid(mProfile)
++                                == DownloadPromptStatus.SHOW_INITIAL;
+ 
+         PropertyModel.Builder builder =
+                 new PropertyModel.Builder(DownloadLocationDialogProperties.ALL_KEYS);
+@@ -230,7 +241,7 @@
+         builder.with(DownloadLocationDialogProperties.SHOW_SUBTITLE, true);
+         builder.with(
+                 DownloadLocationDialogProperties.DONT_SHOW_AGAIN_CHECKBOX_SHOWN,
+-                !mLocationDialogManaged);
++                !mLocationDialogManaged && !isExternalDownloadManagerEnabled());
+         switch (mDialogType) {
+             case DownloadLocationDialogType.LOCATION_FULL:
+                 builder.with(
+@@ -348,9 +359,11 @@
+         if (!mLocationDialogManaged) {
+             DownloadDialogBridge.setPromptForDownloadAndroid(
+                     mProfile,
+-                    dontShowAgain
+-                            ? DownloadPromptStatus.DONT_SHOW
+-                            : DownloadPromptStatus.SHOW_PREFERENCE);
++                    isExternalDownloadManagerEnabled()
++                            ? DownloadPromptStatus.SHOW_PREFERENCE
++                            : (dontShowAgain
++                                    ? DownloadPromptStatus.DONT_SHOW
++                                    : DownloadPromptStatus.SHOW_PREFERENCE));
+         }
+     }
+ 
+diff --git a/chrome/browser/download/android/java/src/org/chromium/chrome/browser/download/settings/DownloadSettings.java b/chrome/browser/download/android/java/src/org/chromium/chrome/browser/download/settings/DownloadSettings.java
+--- a/chrome/browser/download/android/java/src/org/chromium/chrome/browser/download/settings/DownloadSettings.java
++++ b/chrome/browser/download/android/java/src/org/chromium/chrome/browser/download/settings/DownloadSettings.java
+@@ -153,12 +153,25 @@
+ 
+         if (mExternalDownloadManagerPref != null) {
+             SharedPreferences sharedPreferences = ContextUtils.getAppSharedPreferences();
+-            boolean enabled = sharedPreferences.getBoolean(PREF_ENABLE_EXTERNAL_DOWNLOAD_MANAGER, false);
++            boolean enabled =
++                    sharedPreferences.getBoolean(PREF_ENABLE_EXTERNAL_DOWNLOAD_MANAGER, false);
+             mExternalDownloadManagerPref.setChecked(enabled);
+ 
+             if (enabled) {
++                if (!DownloadDialogBridge.isLocationDialogManaged(getProfile())) {
++                    if (DownloadDialogBridge.getPromptForDownloadAndroid(getProfile())
++                            != DownloadPromptStatus.SHOW_PREFERENCE) {
++                        DownloadDialogBridge.setPromptForDownloadAndroid(
++                                getProfile(), DownloadPromptStatus.SHOW_PREFERENCE);
++                    }
++
++                    mLocationPromptEnabledPref.setChecked(true);
++                    mLocationPromptEnabledPref.setEnabled(false);
++                }
++
+                 String packageName =
+-                        sharedPreferences.getString(PREF_SELECTED_EXTERNAL_DOWNLOAD_MANAGER_PACKAGE_NAME, "");
++                        sharedPreferences.getString(
++                                PREF_SELECTED_EXTERNAL_DOWNLOAD_MANAGER_PACKAGE_NAME, "");
+                 if (!TextUtils.isEmpty(packageName)) {
+                     mExternalDownloadManagerPref.setSummary(packageName);
+                 }
+@@ -231,6 +244,13 @@
+                             getProfile(), DownloadPromptStatus.SHOW_PREFERENCE);
+                 }
+             } else {
++                if (ContextUtils.getAppSharedPreferences()
++                        .getBoolean(PREF_ENABLE_EXTERNAL_DOWNLOAD_MANAGER, false)) {
++                    DownloadDialogBridge.setPromptForDownloadAndroid(
++                            getProfile(), DownloadPromptStatus.SHOW_PREFERENCE);
++                    updateDownloadSettings();
++                    return false;
++                }
+                 DownloadDialogBridge.setPromptForDownloadAndroid(
+                         getProfile(), DownloadPromptStatus.DONT_SHOW);
+             }
+@@ -241,6 +261,7 @@
+             editor.putBoolean(PREF_ENABLE_EXTERNAL_DOWNLOAD_MANAGER, (boolean) newValue);
+             editor.apply();
+ 
++            updateDownloadSettings();
+             if ((boolean) newValue) {
+                 showExternalDownloadManagerPicker();
+             }
