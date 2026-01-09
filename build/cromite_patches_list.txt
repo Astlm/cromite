@@ -61,7 +61,6 @@ Add-an-always-incognito-mode.patch
 Keep-flag-to-allow-screenshots-in-Incognito-mode.patch
 Add-option-to-not-persist-tabs-across-sessions.patch
 Add-option-to-keep-app-open-when-all-tabs-closed.patch
-Add-a-proxy-configuration-page.patch
 Add-custom-tab-intents-privacy-option.patch
 Disable-privacy-sandbox.patch
 History-number-of-days-privacy-setting.patch
@@ -81,8 +80,6 @@ prefs-always-prompt-for-download-directory.patch
 Disable-offline-pages-in-CCT.patch
 Disable-media-router-and-remoting-by-default.patch
 Restore-Search-Ready-Omnibox-flag.patch
-disable-AdsBlockedInfoBar.patch
-Bromite-subresource-adblocker.patch
 Bromite-auto-updater.patch
 Replace-DoH-probe-domain-with-RIPE-domain.patch
 Increase-number-of-autocomplete-matches-to-10.patch
@@ -120,7 +117,7 @@ User-agent-customization.patch
 Add-AllowUserCertificates-flag.patch
 Add-IsCleartextPermitted-flag.patch
 Add-flag-for-omnibox-autocomplete-filtering.patch
-Add-flag-to-disable-external-intent-requests.patch
+Add-site-setting-for-open-external-apps.patch
 Enable-share-intent.patch
 Logcat-crash-reports-UI.patch
 Add-flag-to-disable-vibration.patch
@@ -323,14 +320,6 @@ Block-leakage-of-urls-in-sandbox-iframes.patch
 Fix-chromium-build-bugs.patch
 Try-to-fix-2082.patch
 Temp-use-PREVIEW-for-IDCompositionDevice5.patch
-
-# adblock patches
-eyeo-133.0.6943.49-base.patch
-eyeo-133.0.6943.49-chrome_integration.patch
-eyeo-133.0.6943.49-android_api.patch
-eyeo-133.0.6943.49-android_settings.patch
-eyeo-133.0.6943.49-extension_api.patch
-Eyeo-Adblock-for-Cromite.patch
 
 # extension patches
 Experimental-support-for-extensions-on-Android.patch

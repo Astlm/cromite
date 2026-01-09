@@ -1,0 +1,524 @@
+From 8e8eecee0156fb3da2a7ece25b44f00f5c1813f7 Mon Sep 17 00:00:00 2001
+From: Astlm <ztcan0824@gmail.com>
+Date: Fri, 9 Jan 2026 05:51:48 +0000
+Subject: [PATCH] Add site setting for open external apps
+
+Introduce a new site permission (open-external-apps) to gate external application launches from web
+content.
+
+Default: ASK.
+States: ALLOW / ASK / BLOCK.
+
+Also applies to tel: and other external schemes.
+
+License: GPL-3.0-only - https://spdx.org/licenses/GPL-3.0-only.html
+Require: Content-settings-infrastructure.patch
+---
+ .../ExternalNavigationDelegateImpl.java       |  42 ++++++
+ ...BromiteOpenExternalAppsContentSetting.java | 101 +++++++++++++
+ .../open_external_apps.grdp                   |  30 ++++
+ .../open_external_apps.inc                    |  23 +++
+ .../OPEN_EXTERNAL_APPS.inc                    |   2 +
+ .../ExternalNavigationDelegate.java           |  26 ++++
+ .../ExternalNavigationHandler.java            | 134 +++++++++++++++++-
+ .../ExternalNavigationHandlerTest.java        |   5 +
+ 8 files changed, 362 insertions(+), 1 deletion(-)
+ create mode 100644 components/browser_ui/site_settings/android/java/src/org/chromium/components/browser_ui/site_settings/impl/BromiteOpenExternalAppsContentSetting.java
+ create mode 100644 components/browser_ui/strings/bromite_content_settings/open_external_apps.grdp
+ create mode 100644 components/content_settings/core/browser/bromite_content_settings/open_external_apps.inc
+ create mode 100644 components/content_settings/core/common/bromite_content_settings/OPEN_EXTERNAL_APPS.inc
+
+diff --git a/chrome/android/java/src/org/chromium/chrome/browser/externalnav/ExternalNavigationDelegateImpl.java b/chrome/android/java/src/org/chromium/chrome/browser/externalnav/ExternalNavigationDelegateImpl.java
+index 2685c7af8f..50b49d19d2 100644
+--- a/chrome/android/java/src/org/chromium/chrome/browser/externalnav/ExternalNavigationDelegateImpl.java
++++ b/chrome/android/java/src/org/chromium/chrome/browser/externalnav/ExternalNavigationDelegateImpl.java
+@@ -30,6 +30,7 @@ import org.chromium.chrome.browser.IntentHandler;
+ import org.chromium.chrome.browser.browserservices.intents.WebappConstants;
+ import org.chromium.chrome.browser.document.ChromeLauncherActivity;
+ import org.chromium.chrome.browser.password_manager.CctPasswordSavingMetricsRecorderBridge;
++import org.chromium.chrome.browser.profiles.Profile;
+ import org.chromium.chrome.browser.safe_browsing.SafeBrowsingBridge;
+ import org.chromium.chrome.browser.tab.EmptyTabObserver;
+ import org.chromium.chrome.browser.tab.Tab;
+@@ -37,12 +38,16 @@ import org.chromium.chrome.browser.tab.TabObserver;
+ import org.chromium.chrome.browser.tabmodel.TabClosureParams;
+ import org.chromium.chrome.browser.tabmodel.TabModelSelector;
+ import org.chromium.chrome.browser.tabmodel.TabModelSelectorSupplier;
++import org.chromium.components.browser_ui.site_settings.WebsitePreferenceBridge;
++import org.chromium.components.content_settings.ContentSetting;
++import org.chromium.components.content_settings.ContentSettingsType;
+ import org.chromium.components.embedder_support.util.UrlConstants;
+ import org.chromium.components.external_intents.ExternalNavigationDelegate;
+ import org.chromium.components.external_intents.ExternalNavigationParams;
+ import org.chromium.content_public.browser.WebContents;
+ import org.chromium.ui.base.WindowAndroid;
+ import org.chromium.url.GURL;
++import org.chromium.url.Origin;
+ 
+ import java.util.List;
+ import java.util.function.Predicate;
+@@ -134,6 +139,43 @@ public class ExternalNavigationDelegateImpl implements ExternalNavigationDelegat
+         return false;
+     }
+ 
++    @Override
++    public @ExternalNavigationDelegate.ExternalAppLaunchPolicy int getExternalAppLaunchPolicy(
++            ExternalNavigationParams params) {
++        GURL sourceUrl = GURL.emptyGURL();
++        Origin initiatorOrigin = params.getInitiatorOrigin();
++        if (initiatorOrigin != null && !initiatorOrigin.isOpaque()) {
++            sourceUrl = new GURL(initiatorOrigin.toString());
++        } else if (!params.getReferrerUrl().isEmpty()) {
++            sourceUrl = params.getReferrerUrl();
++        } else if (mTab != null) {
++            sourceUrl = mTab.getUrl();
++        }
++
++        if (sourceUrl.isEmpty()) {
++            return ExternalNavigationDelegate.ExternalAppLaunchPolicy.ASK;
++        }
++
++        Profile profile = mTab.getProfile();
++        @ContentSetting
++        int setting =
++                WebsitePreferenceBridge.getContentSetting(
++                        profile,
++                        ContentSettingsType.OPEN_EXTERNAL_APPS,
++                        sourceUrl,
++                        sourceUrl);
++        switch (setting) {
++            case ContentSetting.ALLOW:
++                return ExternalNavigationDelegate.ExternalAppLaunchPolicy.ALLOW;
++            case ContentSetting.BLOCK:
++                return ExternalNavigationDelegate.ExternalAppLaunchPolicy.BLOCK;
++            case ContentSetting.ASK:
++                return ExternalNavigationDelegate.ExternalAppLaunchPolicy.ASK;
++            default:
++                return ExternalNavigationDelegate.ExternalAppLaunchPolicy.ASK;
++        }
++    }
++
+     @Override
+     public boolean isApplicationInForeground() {
+         return ApplicationStatus.getStateForApplication()
+diff --git a/components/browser_ui/site_settings/android/java/src/org/chromium/components/browser_ui/site_settings/impl/BromiteOpenExternalAppsContentSetting.java b/components/browser_ui/site_settings/android/java/src/org/chromium/components/browser_ui/site_settings/impl/BromiteOpenExternalAppsContentSetting.java
+new file mode 100644
+index 0000000000..14ef5e2685
+--- /dev/null
++++ b/components/browser_ui/site_settings/android/java/src/org/chromium/components/browser_ui/site_settings/impl/BromiteOpenExternalAppsContentSetting.java
+@@ -0,0 +1,101 @@
++/*
++    This file is part of Bromite.
++
++    Bromite is free software: you can redistribute it and/or modify
++    it under the terms of the GNU General Public License as published by
++    the Free Software Foundation, either version 3 of the License, or
++    (at your option) any later version.
++
++    Bromite is distributed in the hope that it will be useful,
++    but WITHOUT ANY WARRANTY; without even the implied warranty of
++    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++    GNU General Public License for more details.
++
++    You should have received a copy of the GNU General Public License
++    along with Bromite. If not, see <https://www.gnu.org/licenses/>.
++*/
++
++package org.chromium.components.browser_ui.site_settings.impl;
++
++import org.chromium.components.browser_ui.site_settings.R;
++
++import org.chromium.components.browser_ui.site_settings.BromiteCustomContentSetting;
++import org.chromium.components.browser_ui.site_settings.ContentSettingsResources;
++import org.chromium.components.browser_ui.site_settings.SiteSettingsCategory;
++import org.chromium.components.content_settings.ContentSetting;
++import org.chromium.components.content_settings.ContentSettingsType;
++
++import androidx.annotation.Nullable;
++
++public class BromiteOpenExternalAppsContentSetting extends BromiteCustomContentSetting {
++    public BromiteOpenExternalAppsContentSetting() {
++        super(/*contentSettingsType*/ ContentSettingsType.OPEN_EXTERNAL_APPS,
++              /*defaultEnabledValue*/ ContentSetting.ALLOW,
++              /*defaultDisabledValue*/ ContentSetting.BLOCK,
++              /*allowException*/ true,
++              /*preferenceKey*/ "open_external_apps",
++              /*profilePrefKey*/ "open_external_apps");
++    }
++
++    @Override
++    public ContentSettingsResources.ResourceItem getResourceItem() {
++        return new ContentSettingsResources.ResourceItem(
++            /*icon*/ R.drawable.web_asset,
++            /*title*/ R.string.open_external_apps_permission_title,
++            /*defaultEnabledValue*/ getDefaultEnabledValue(),
++            /*defaultDisabledValue*/ getDefaultDisabledValue(),
++            /*enabledSummary*/ R.string.website_settings_category_open_external_apps_allowed,
++            /*disabledSummary*/ R.string.website_settings_category_open_external_apps_blocked,
++            /*summaryOverrideForScreenReader*/ 0);
++    }
++
++    @Override
++    public int getCategorySummary(@Nullable @ContentSetting int value) {
++        switch (value) {
++            case ContentSetting.ALLOW:
++                return R.string.website_settings_category_open_external_apps_allowed;
++            case ContentSetting.ASK:
++                return R.string.website_settings_category_open_external_apps_ask;
++            case ContentSetting.BLOCK:
++                return R.string.website_settings_category_open_external_apps_blocked;
++            default:
++                return R.string.website_settings_category_open_external_apps_ask;
++        }
++    }
++
++    @Override
++    public int getCategoryDescription() {
++        return R.string.settings_site_settings_open_external_apps_description;
++    }
++
++    @Override
++    public boolean requiresTriStateContentSetting() {
++        return true;
++    }
++
++    @Override
++    public int[] getTriStateSettingDescriptionIDs() {
++        int[] descriptionIDs = {
++                R.string.website_settings_category_open_external_apps_allowed, // ALLOWED
++                R.string.website_settings_category_open_external_apps_ask,     // ASK
++                R.string.website_settings_category_open_external_apps_blocked, // BLOCKED
++        };
++        return descriptionIDs;
++    }
++
++    @Override
++    public boolean showOnlyDescriptions() {
++        return true;
++    }
++
++    @Override
++    public int getAddExceptionDialogMessage() {
++        return R.string.website_settings_category_open_external_apps_allowed;
++    }
++
++    @Override
++    public @Nullable Boolean considerException(
++            SiteSettingsCategory category, @ContentSetting int value) {
++        return value == ContentSetting.BLOCK;
++    }
++}
+diff --git a/components/browser_ui/strings/bromite_content_settings/open_external_apps.grdp b/components/browser_ui/strings/bromite_content_settings/open_external_apps.grdp
+new file mode 100644
+index 0000000000..37612cb7e7
+--- /dev/null
++++ b/components/browser_ui/strings/bromite_content_settings/open_external_apps.grdp
+@@ -0,0 +1,30 @@
++<?xml version="1.0" encoding="utf-8"?>
++<grit-part>
++  <message name="IDS_SITE_SETTINGS_TYPE_OPEN_EXTERNAL_APPS" desc="The label used for open external apps site settings controls." formatter_data="android_java">
++    打开外部应用
++  </message>
++  <message name="IDS_SITE_SETTINGS_TYPE_OPEN_EXTERNAL_APPS_MID_SENTENCE" desc="The label used for open external apps site settings controls when used mid-sentence." formatter_data="android_java">
++    打开外部应用
++  </message>
++  <message name="IDS_SETTINGS_SITE_SETTINGS_OPEN_EXTERNAL_APPS_DESCRIPTION" desc="Description of the open external apps content setting." formatter_data="android_java">
++    控制网站是否可以打开外部应用（例如电话、地图等）
++  </message>
++  <message name="IDS_OPEN_EXTERNAL_APPS_PERMISSION_TITLE" desc="Title of the permission to open external apps [CHAR-LIMIT=32]" formatter_data="android_java">
++    打开外部应用
++  </message>
++  <message name="IDS_WEBSITE_SETTINGS_CATEGORY_OPEN_EXTERNAL_APPS_ALLOWED" desc="Summary text for allowed open external apps permission." formatter_data="android_java">
++    允许
++  </message>
++  <message name="IDS_WEBSITE_SETTINGS_CATEGORY_OPEN_EXTERNAL_APPS_ASK" desc="Summary text for ask open external apps permission." formatter_data="android_java">
++    询问
++  </message>
++  <message name="IDS_WEBSITE_SETTINGS_CATEGORY_OPEN_EXTERNAL_APPS_BLOCKED" desc="Summary text for blocked open external apps permission." formatter_data="android_java">
++    已阻止
++  </message>
++  <message name="IDS_SETTINGS_SITE_SETTINGS_OPEN_EXTERNAL_APPS_ALLOWED_EXCEPTIONS" desc="Label for the allowed exceptions site list of the open external apps setting.">
++    允许打开外部应用
++  </message>
++  <message name="IDS_SETTINGS_SITE_SETTINGS_OPEN_EXTERNAL_APPS_BLOCKED_EXCEPTIONS" desc="Label for the blocked exceptions site list of the open external apps setting.">
++    不允许打开外部应用
++  </message>
++</grit-part>
+diff --git a/components/content_settings/core/browser/bromite_content_settings/open_external_apps.inc b/components/content_settings/core/browser/bromite_content_settings/open_external_apps.inc
+new file mode 100644
+index 0000000000..a2c6e566a9
+--- /dev/null
++++ b/components/content_settings/core/browser/bromite_content_settings/open_external_apps.inc
+@@ -0,0 +1,23 @@
++  Register(ContentSettingsType::OPEN_EXTERNAL_APPS, "open-external-apps",
++           CONTENT_SETTING_ASK, WebsiteSettingsInfo::UNSYNCABLE,
++           /*allowlisted_primary_schemes=*/{},
++           /*valid_settings=*/{CONTENT_SETTING_ALLOW, CONTENT_SETTING_BLOCK,
++                               CONTENT_SETTING_ASK},
++           WebsiteSettingsInfo::TOP_ORIGIN_ONLY_SCOPE,
++           WebsiteSettingsRegistry::PLATFORM_ANDROID,
++           ContentSettingsInfo::INHERIT_IN_INCOGNITO,
++           PermissionSettingsInfo::EXCEPTIONS_ON_SECURE_AND_INSECURE_ORIGINS);
++
++  content_settings::WebsiteSettingsRegistry::GetInstance()
++      ->GetMutable(ContentSettingsType::OPEN_EXTERNAL_APPS)
++      ->set_show_into_info_page()
++      .set_title_ui(IDS_SITE_SETTINGS_TYPE_OPEN_EXTERNAL_APPS)
++      .set_description_ui(IDS_SETTINGS_SITE_SETTINGS_OPEN_EXTERNAL_APPS_DESCRIPTION)
++      .set_allowed_ui(IDS_WEBSITE_SETTINGS_CATEGORY_OPEN_EXTERNAL_APPS_ALLOWED)
++      .set_ask_ui(IDS_WEBSITE_SETTINGS_CATEGORY_OPEN_EXTERNAL_APPS_ASK)
++      .set_blocked_ui(IDS_WEBSITE_SETTINGS_CATEGORY_OPEN_EXTERNAL_APPS_BLOCKED)
++      .set_allowed_exceptions_ui(
++          IDS_SETTINGS_SITE_SETTINGS_OPEN_EXTERNAL_APPS_ALLOWED_EXCEPTIONS)
++      .set_blocked_exceptions_ui(
++          IDS_SETTINGS_SITE_SETTINGS_OPEN_EXTERNAL_APPS_BLOCKED_EXCEPTIONS)
++      .set_mid_sentence_ui(IDS_SITE_SETTINGS_TYPE_OPEN_EXTERNAL_APPS_MID_SENTENCE);
+diff --git a/components/content_settings/core/common/bromite_content_settings/OPEN_EXTERNAL_APPS.inc b/components/content_settings/core/common/bromite_content_settings/OPEN_EXTERNAL_APPS.inc
+new file mode 100644
+index 0000000000..498fafa052
+--- /dev/null
++++ b/components/content_settings/core/common/bromite_content_settings/OPEN_EXTERNAL_APPS.inc
+@@ -0,0 +1,2 @@
++  // Stores whether to allow the site to open external applications.
++  OPEN_EXTERNAL_APPS,
+diff --git a/components/external_intents/android/java/src/org/chromium/components/external_intents/ExternalNavigationDelegate.java b/components/external_intents/android/java/src/org/chromium/components/external_intents/ExternalNavigationDelegate.java
+index 6f5fb74c38..178330e7cb 100644
+--- a/components/external_intents/android/java/src/org/chromium/components/external_intents/ExternalNavigationDelegate.java
++++ b/components/external_intents/android/java/src/org/chromium/components/external_intents/ExternalNavigationDelegate.java
+@@ -8,6 +8,8 @@ import android.content.Context;
+ import android.content.Intent;
+ import android.content.pm.ResolveInfo;
+ 
++import androidx.annotation.IntDef;
++
+ import org.chromium.base.Callback;
+ import org.chromium.build.annotations.NullMarked;
+ import org.chromium.build.annotations.Nullable;
+@@ -15,12 +17,36 @@ import org.chromium.content_public.browser.WebContents;
+ import org.chromium.ui.base.WindowAndroid;
+ import org.chromium.url.GURL;
+ 
++import java.lang.annotation.Retention;
++import java.lang.annotation.RetentionPolicy;
+ import java.util.List;
+ import java.util.function.Supplier;
+ 
+ /** A delegate for {@link ExternalNavigationHandler}. */
+ @NullMarked
+ public interface ExternalNavigationDelegate {
++    @IntDef({
++        ExternalAppLaunchPolicy.ALLOW,
++        ExternalAppLaunchPolicy.BLOCK,
++        ExternalAppLaunchPolicy.ASK,
++    })
++    @Retention(RetentionPolicy.SOURCE)
++    @interface ExternalAppLaunchPolicy {
++        int ALLOW = 0;
++        int BLOCK = 1;
++        int ASK = 2;
++    }
++
++    /**
++     * Returns the policy for whether to allow a site to open an external application.
++     *
++     * <p>This policy is intended to be used to gate all external app launches initiated from web
++     * content, including for supported schemes (e.g. http/https) that may resolve to an external
++     * application.
++     */
++    @ExternalAppLaunchPolicy
++    int getExternalAppLaunchPolicy(ExternalNavigationParams params);
++
+     /**
+      * Returns the Context with which this delegate is associated, or null if there is no such
+      * Context at the time of invocation. The returned Context may or may not be a wrapper around an
+diff --git a/components/external_intents/android/java/src/org/chromium/components/external_intents/ExternalNavigationHandler.java b/components/external_intents/android/java/src/org/chromium/components/external_intents/ExternalNavigationHandler.java
+index dde9f0ed17..b470527aed 100644
+--- a/components/external_intents/android/java/src/org/chromium/components/external_intents/ExternalNavigationHandler.java
++++ b/components/external_intents/android/java/src/org/chromium/components/external_intents/ExternalNavigationHandler.java
+@@ -1780,6 +1780,8 @@ public class ExternalNavigationHandler {
+         // another app that 30x redirects to a YouTube/Google Maps/Play Store/Google+ URL etc.
+         boolean incomingIntentRedirect = isIncomingIntentRedirect(params);
+         boolean isExternalProtocol = !UrlUtilities.isAcceptedScheme(params.getUrl());
++        @ExternalNavigationDelegate.ExternalAppLaunchPolicy
++        int externalAppLaunchPolicy = mDelegate.getExternalAppLaunchPolicy(params);
+ 
+         GURL intentTargetUrl = new GURL(targetIntent.getDataString());
+         // Unpack schemes targeting the current browser.
+@@ -1845,6 +1847,11 @@ public class ExternalNavigationHandler {
+             return OverrideUrlLoadingResult.forNoOverride();
+         }
+ 
++        if (externalAppLaunchPolicy == ExternalNavigationDelegate.ExternalAppLaunchPolicy.BLOCK) {
++            if (debug()) Log.i(TAG, "External app launches blocked by site settings.");
++            return OverrideUrlLoadingResult.forNoOverride();
++        }
++
+         if (isLinkFromChromeInternalPage(params)) return OverrideUrlLoadingResult.forNoOverride();
+ 
+         if (isDirectFormSubmit(params, isExternalProtocol)) {
+@@ -1965,7 +1972,8 @@ public class ExternalNavigationHandler {
+             return OverrideUrlLoadingResult.forAsyncAction();
+         }
+ 
+-        if (launchWebApkIfSoleIntentHandler(resolvingInfos, targetIntent, params)) {
++        if (externalAppLaunchPolicy != ExternalNavigationDelegate.ExternalAppLaunchPolicy.ASK
++                && launchWebApkIfSoleIntentHandler(resolvingInfos, targetIntent, params)) {
+             return OverrideUrlLoadingResult.forExternalIntent();
+         }
+ 
+@@ -1981,6 +1989,30 @@ public class ExternalNavigationHandler {
+                     isExternalProtocol, intentTargetUrl, resolvingInfos, resolveActivity)) {
+                 return OverrideUrlLoadingResult.forNoOverride();
+             }
++            if (externalAppLaunchPolicy == ExternalNavigationDelegate.ExternalAppLaunchPolicy.ASK
++                    && !requiresIntentChooser) {
++                ResolveInfo intentResolveInfo = resolveActivity.get();
++                if (intentResolveInfo == null || intentResolveInfo.activityInfo == null) {
++                    return OverrideUrlLoadingResult.forNoOverride();
++                }
++
++                if (resolvesToChooser(intentResolveInfo, resolvingInfos)) {
++                    // For supported schemes, continue loading in the browser instead of cancelling
++                    // the navigation to show a system chooser.
++                    if (!isExternalProtocol) {
++                        return OverrideUrlLoadingResult.forNoOverride();
++                    }
++                } else {
++                    return maybeAskToLaunchAppForUserSetting(
++                            isExternalProtocol,
++                            targetIntent,
++                            resolvingInfos,
++                            resolveActivity,
++                            browserFallbackUrl,
++                            intentTargetUrl,
++                            params);
++                }
++            }
+             if (navigationChainResult == NavigationChainResult.REQUIRES_PROMPT) {
+                 return maybeAskToLaunchApp(
+                         isExternalProtocol,
+@@ -2688,6 +2720,106 @@ public class ExternalNavigationHandler {
+         return OverrideUrlLoadingResult.forAsyncAction();
+     }
+ 
++    protected OverrideUrlLoadingResult maybeAskToLaunchAppForUserSetting(
++            boolean isExternalProtocol,
++            Intent targetIntent,
++            QueryIntentActivitiesSupplier resolvingInfos,
++            ResolveActivitySupplier resolveActivity,
++            GURL browserFallbackUrl,
++            GURL intentTargetUrl,
++            ExternalNavigationParams params) {
++        ResolveInfo intentResolveInfo = resolveActivity.get();
++
++        // No app can resolve the intent, don't prompt.
++        if (intentResolveInfo == null || intentResolveInfo.activityInfo == null) {
++            if (debug()) Log.i(TAG, "Open external app prompt doesn't resolve to any app.");
++            return OverrideUrlLoadingResult.forNoOverride();
++        }
++
++        // We only show the prompt when the intent resolves to a specific default app.
++        if (resolvesToChooser(intentResolveInfo, resolvingInfos)) {
++            return OverrideUrlLoadingResult.forNoOverride();
++        }
++
++        MessageDispatcher messageDispatcher =
++                MessageDispatcherProvider.from(mDelegate.getWindowAndroid());
++        WebContents webContents = mDelegate.getWebContents();
++        if (messageDispatcher == null || webContents == null) {
++            if (debug()) Log.i(TAG, "No WebContents to show Message for.");
++            return OverrideUrlLoadingResult.forNoOverride();
++        }
++
++        String packageName = intentResolveInfo.activityInfo.packageName;
++        PackageManager pm = assumeNonNull(mDelegate.getContext()).getPackageManager();
++        ApplicationInfo applicationInfo;
++        try {
++            applicationInfo = pm.getApplicationInfo(packageName, 0);
++        } catch (NameNotFoundException e) {
++            return OverrideUrlLoadingResult.forNoOverride();
++        }
++
++        Drawable icon = pm.getApplicationLogo(applicationInfo);
++        if (icon == null) icon = pm.getApplicationIcon(applicationInfo);
++        CharSequence label = pm.getApplicationLabel(applicationInfo);
++
++        Resources res = mDelegate.getContext().getResources();
++        String title = res.getString(R.string.external_navigation_continue_to_title, label);
++        String description =
++                res.getString(R.string.external_navigation_continue_to_description, label);
++        String action = res.getString(R.string.external_navigation_continue_to_action);
++
++        PropertyModel message =
++                new PropertyModel.Builder(MessageBannerProperties.ALL_KEYS)
++                        .with(
++                                MessageBannerProperties.MESSAGE_IDENTIFIER,
++                                MessageIdentifier.EXTERNAL_NAVIGATION)
++                        .with(MessageBannerProperties.TITLE, title)
++                        .with(MessageBannerProperties.DESCRIPTION, description)
++                        .with(MessageBannerProperties.ICON, icon)
++                        .with(MessageBannerProperties.PRIMARY_BUTTON_TEXT, action)
++                        .with(
++                                MessageBannerProperties.ICON_TINT_COLOR,
++                                MessageBannerProperties.TINT_NONE)
++                        .with(
++                                MessageBannerProperties.ON_PRIMARY_ACTION,
++                                () -> {
++                                    startActivity(targetIntent, params);
++                                    var callback = params.getRequiredAsyncActionTakenCallback();
++                                    if (callback != null) {
++                                        callback.onResult(
++                                                AsyncActionTakenParams.forExternalIntentLaunched(
++                                                        true, params));
++                                    }
++                                    return PrimaryActionClickBehavior.DISMISS_IMMEDIATELY;
++                                })
++                        .with(
++                                MessageBannerProperties.ON_DISMISSED,
++                                (dismissReason) -> {
++                                    if (dismissReason == DismissReason.PRIMARY_ACTION) return;
++                                    var callback = params.getRequiredAsyncActionTakenCallback();
++                                    if (callback == null) return;
++
++                                    if (UrlUtilities.isAcceptedScheme(intentTargetUrl)) {
++                                        callback.onResult(
++                                                AsyncActionTakenParams.forNavigate(
++                                                        intentTargetUrl, params));
++                                        return;
++                                    }
++
++                                    if (!browserFallbackUrl.isEmpty()) {
++                                        callback.onResult(
++                                                AsyncActionTakenParams.forNavigate(
++                                                        browserFallbackUrl, params));
++                                        return;
++                                    }
++
++                                    callback.onResult(AsyncActionTakenParams.forNoAction());
++                                })
++                        .build();
++        messageDispatcher.enqueueMessage(message, webContents, MessageScopeType.NAVIGATION, false);
++        return OverrideUrlLoadingResult.forAsyncAction();
++    }
++
+     /**
+      * Returns the number of specialized intent handlers in {@params infos}. Specialized intent
+      * handlers are intent handlers which handle only a few URLs (e.g. google maps or youtube).
+diff --git a/components/external_intents/android/javatests/src/org/chromium/components/external_intents/ExternalNavigationHandlerTest.java b/components/external_intents/android/javatests/src/org/chromium/components/external_intents/ExternalNavigationHandlerTest.java
+index a51fa19408..010a95fe71 100644
+--- a/components/external_intents/android/javatests/src/org/chromium/components/external_intents/ExternalNavigationHandlerTest.java
++++ b/components/external_intents/android/javatests/src/org/chromium/components/external_intents/ExternalNavigationHandlerTest.java
+@@ -3527,6 +3527,11 @@ public class ExternalNavigationHandlerTest {
+             return mContext;
+         }
+ 
++        @Override
++        public @ExternalAppLaunchPolicy int getExternalAppLaunchPolicy(ExternalNavigationParams params) {
++            return ExternalAppLaunchPolicy.ALLOW;
++        }
++
+         @Override
+         public boolean willAppHandleIntent(Intent intent) {
+             String chromePackageName = ContextUtils.getApplicationContext().getPackageName();
+-- 
+2.47.3
