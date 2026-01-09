@@ -117,7 +117,6 @@ User-agent-customization.patch
 Add-AllowUserCertificates-flag.patch
 Add-IsCleartextPermitted-flag.patch
 Add-flag-for-omnibox-autocomplete-filtering.patch
-Add-site-setting-for-open-external-apps.patch
 Enable-share-intent.patch
 Logcat-crash-reports-UI.patch
 Add-flag-to-disable-vibration.patch
@@ -213,6 +212,7 @@ Disallowing-MIDI-permission-by-default.patch
 Disable-Compression-Dictionary-Transport.patch
 Disallow-Android-App-Scheme-as-referrer.patch
 Content-settings-infrastructure.patch
+Add-site-setting-for-open-external-apps.patch
 Add-autoplay-site-setting.patch
 Site-setting-for-images.patch
 JIT-site-settings.patch
