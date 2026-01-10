@@ -39,6 +39,7 @@ new file mode 100644
 +
 +import org.chromium.build.annotations.NullMarked;
 +import org.chromium.chrome.browser.tab.Tab;
++import org.chromium.content_public.browser.RenderFrameHost;
 +import org.chromium.content_public.browser.WebContents;
 +import org.chromium.url.GURL;
 +
@@ -53,6 +54,7 @@ new file mode 100644
 +    private static final String EDGE_ADDONS_HOST = "microsoftedge.microsoft.com";
 +    private static final String EDGE_ADDONS_URL_PREFIX = "https://" + EDGE_ADDONS_HOST + "/";
 +    private static final String EDGE_ADDONS_PATH_PREFIX = EDGE_ADDONS_URL_PREFIX + "addons";
++    private static final int EDGE_ADDONS_ISOLATED_WORLD_ID = 1000;
 +
 +    private static final String MAKE_USER_AGENT_WRITABLE =
 +            ""
@@ -139,7 +141,7 @@ new file mode 100644
 +            WebContents webContents = tab.getWebContents();
 +            if (webContents == null) return;
 +
-+            GURL url = tab.getUrl();
++            GURL url = webContents.getLastCommittedUrl();
 +            String spec = url.getSpec();
 +            if (!spec.startsWith(EDGE_ADDONS_URL_PREFIX)) return;
 +
@@ -153,7 +155,11 @@ new file mode 100644
 +                return;
 +            }
 +
-+            webContents.evaluateJavaScript(EDGE_ADDONS_SCRIPT, null);
++            RenderFrameHost mainFrame = webContents.getMainFrame();
++            if (mainFrame == null || !mainFrame.isRenderFrameLive()) return;
++
++            mainFrame.executeJavaScriptInIsolatedWorld(
++                    EDGE_ADDONS_SCRIPT, EDGE_ADDONS_ISOLATED_WORLD_ID, null);
 +        } catch (Throwable t) {
 +            // Do not crash the browser process due to a bad URL state during navigation.
 +        }
