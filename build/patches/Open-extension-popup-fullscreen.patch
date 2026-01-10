@@ -35,6 +35,25 @@ diff --git a/ui/android/java/src/org/chromium/ui/listmenu/ListMenuHost.java b/ui
                          .addOnDismissListener(
                                  () -> {
                                      if (!mRemovingPopups) {
+diff --git a/chrome/browser/ui/android/toolbar/BUILD.gn b/chrome/browser/ui/android/toolbar/BUILD.gn
+--- a/chrome/browser/ui/android/toolbar/BUILD.gn
++++ b/chrome/browser/ui/android/toolbar/BUILD.gn
+@@ -249,6 +249,7 @@ android_library("java") {
+       "java/src/org/chromium/chrome/browser/toolbar/extensions/ExtensionActionButtonProperties.java",
+       "java/src/org/chromium/chrome/browser/toolbar/extensions/ExtensionActionButtonViewBinder.java",
+       "java/src/org/chromium/chrome/browser/toolbar/extensions/ExtensionActionContextMenuUtils.java",
++      "java/src/org/chromium/chrome/browser/toolbar/extensions/ExtensionActionFullscreenPopup.java",
+       "java/src/org/chromium/chrome/browser/toolbar/extensions/ExtensionActionIconUtil.java",
+       "java/src/org/chromium/chrome/browser/toolbar/extensions/ExtensionActionListContainer.java",
+       "java/src/org/chromium/chrome/browser/toolbar/extensions/ExtensionActionListCoordinator.java",
+@@ -267,6 +268,7 @@ android_library("java") {
+ 
+     deps += [
+       "//base/version_info/android:version_constants_java",
++      "//components/browser_ui/widget/android:java",
+       "//components/embedder_support/android:content_view_java",
+       "//components/embedder_support/android:web_contents_delegate_java",
+       "//components/thin_webview:factory_java",
 diff --git a/chrome/browser/ui/android/toolbar/java/src/org/chromium/chrome/browser/toolbar/extensions/ExtensionActionContextMenuUtils.java b/chrome/browser/ui/android/toolbar/java/src/org/chromium/chrome/browser/toolbar/extensions/ExtensionActionContextMenuUtils.java
 --- a/chrome/browser/ui/android/toolbar/java/src/org/chromium/chrome/browser/toolbar/extensions/ExtensionActionContextMenuUtils.java
 +++ b/chrome/browser/ui/android/toolbar/java/src/org/chromium/chrome/browser/toolbar/extensions/ExtensionActionContextMenuUtils.java
@@ -104,9 +123,10 @@ new file mode 100644
 +import org.chromium.base.version_info.VersionInfo;
 +import org.chromium.build.NullUtil;
 +import org.chromium.build.annotations.NullMarked;
-+import org.chromium.chrome.R;
++import org.chromium.chrome.browser.ui.edge_to_edge.EdgeToEdgeUtils;
 +import org.chromium.chrome.browser.ui.extensions.ExtensionActionPopupContents;
 +import org.chromium.components.browser_ui.widget.ChromeDialog;
++import org.chromium.components.browser_ui.widget.R;
 +import org.chromium.components.embedder_support.view.ContentView;
 +import org.chromium.components.thinwebview.ThinWebView;
 +import org.chromium.components.thinwebview.ThinWebViewConstraints;
@@ -114,7 +134,6 @@ new file mode 100644
 +import org.chromium.content_public.browser.WebContents;
 +import org.chromium.ui.base.ViewAndroidDelegate;
 +import org.chromium.ui.base.WindowAndroid;
-+import org.chromium.ui.edge_to_edge.EdgeToEdgeUtils;
 +
 +/** Displays an extension action popup page as a fullscreen dialog, while keeping tab context. */
 +@NullMarked
