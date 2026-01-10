@@ -2729,12 +2729,14 @@ diff --git a/chrome/browser/ui/android/toolbar/BUILD.gn b/chrome/browser/ui/andr
 diff --git a/chrome/browser/ui/android/toolbar/java/src/org/chromium/chrome/browser/toolbar/LocationBarFocusScrimHandler.java b/chrome/browser/ui/android/toolbar/java/src/org/chromium/chrome/browser/toolbar/LocationBarFocusScrimHandler.java
 --- a/chrome/browser/ui/android/toolbar/java/src/org/chromium/chrome/browser/toolbar/LocationBarFocusScrimHandler.java
 +++ b/chrome/browser/ui/android/toolbar/java/src/org/chromium/chrome/browser/toolbar/LocationBarFocusScrimHandler.java
-@@ -5,6 +5,7 @@
- package org.chromium.chrome.browser.toolbar;
+@@ -18,6 +18,7 @@ import org.chromium.components.browser_ui.widget.scrim.ScrimProperties;
+ import org.chromium.ui.base.DeviceFormFactor;
+ import org.chromium.ui.modelutil.PropertyModel;
+ import org.chromium.ui.util.ColorUtils;
++import org.chromium.chrome.browser.flags.ChromeFeatureList;
  
- import android.content.Context;
-+import android.graphics.Color;
- import android.view.View;
+ /** Handles showing and hiding a scrim when url bar focus changes. */
+ @NullMarked
 @@ -63,6 +64,10 @@ public class LocationBarFocusScrimHandler implements UrlFocusChangeListener {
          mContext = context;
  
@@ -2746,24 +2748,6 @@ diff --git a/chrome/browser/ui/android/toolbar/java/src/org/chromium/chrome/brow
          mLightScrimColor = context.getColor(R.color.omnibox_focused_fading_background_color_light);
          mScrimModel =
                  new PropertyModel.Builder(ScrimProperties.ALL_KEYS)
-@@ -93,9 +98,13 @@ public class LocationBarFocusScrimHandler implements UrlFocusChangeListener {
-         boolean isTablet = DeviceFormFactor.isNonMultiDisplayContextOnTablet(mContext);
-         boolean useLightColor =
-                 !isTablet
-                         && !mLocationBarDataProvider.isIncognitoBranded()
-                         && !ColorUtils.inNightMode(mContext);
--        mScrimModel.set(
--                ScrimProperties.BACKGROUND_COLOR,
--                useLightColor ? mLightScrimColor : ScrimProperties.INVALID_COLOR);
-+        if (ChromeFeatureList.sMoveTopToolbarToBottom.isEnabled()) {
-+            mScrimModel.set(ScrimProperties.BACKGROUND_COLOR, Color.TRANSPARENT);
-+        } else {
-+            mScrimModel.set(
-+                    ScrimProperties.BACKGROUND_COLOR,
-+                    useLightColor ? mLightScrimColor : ScrimProperties.INVALID_COLOR);
-+        }
- 
-         if (hasFocus && !showScrimAfterAnimationCompletes()) {
 diff --git a/chrome/browser/ui/android/toolbar/java/src/org/chromium/chrome/browser/toolbar/ToolbarLongPressMenuHandler.java b/chrome/browser/ui/android/toolbar/java/src/org/chromium/chrome/browser/toolbar/ToolbarLongPressMenuHandler.java
 --- a/chrome/browser/ui/android/toolbar/java/src/org/chromium/chrome/browser/toolbar/ToolbarLongPressMenuHandler.java
 +++ b/chrome/browser/ui/android/toolbar/java/src/org/chromium/chrome/browser/toolbar/ToolbarLongPressMenuHandler.java
