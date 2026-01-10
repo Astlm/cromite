@@ -106,6 +106,10 @@ if (target_os == "android") {
   target_os = "android" # fix traffic annotation auditor
   #enable_kythe_annotations = true
 
+  # Local builds don't need android-binary-size trybot expectations validation.
+  # Disabling avoids pulling in 32/64 validation targets for arm64-only builds.
+  enable_trybot_verification = false
+
   # Build arm64-only (no secondary ABI / no 32-bit toolchain).
   enable_android_secondary_abi = false
 
