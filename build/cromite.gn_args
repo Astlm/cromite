@@ -86,6 +86,9 @@ enable_request_header_integrity = false
 # Disable precompiled headers because they are incompatible with the unsafe_buffers configuration
 enable_precompiled_headers = false
 
+# Speed: disable libc++ hardening checks (lower safety, higher performance).
+enable_safe_libcxx = false
+
 # Disable integration with Gemini
 enable_glic = false
 
@@ -102,6 +105,9 @@ not_needed(["_target_build", "_is_debug_build"])
 if (target_os == "android") {
   target_os = "android" # fix traffic annotation auditor
   #enable_kythe_annotations = true
+
+  # Build arm64-only (no secondary ABI / no 32-bit toolchain).
+  enable_android_secondary_abi = false
 
   chrome_public_manifest_package = "org.cromite.cromite"
   system_webview_package_name="org.cromite.webview" #"com.android.webview"
