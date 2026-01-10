@@ -64,9 +64,9 @@ if (target_os == "android" || target_os == "win") {
 # disable passthrough audio codecs
 enable_platform_dts_audio = false
 
-# disabled the use of the context snapshot
+# enable the use of the context snapshot
 # see https://github.com/uazo/cromite/pull/317 for context
-use_v8_context_snapshot = false
+use_v8_context_snapshot = true
 
 # disable minikin engine
 # see https://github.com/uazo/cromite/issues/697
