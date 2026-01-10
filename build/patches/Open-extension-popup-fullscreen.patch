@@ -1,0 +1,579 @@
+From 1d4c72413b90c2cb14e73c21a3335bf3e2c2b2a0 Mon Sep 17 00:00:00 2001
+From: cromite <cromite@users.noreply.github.com>
+Date: Sat, 10 Jan 2026 12:00:00 +0000
+Subject: [PATCH] Open-extension-popup-fullscreen
+
+Keep the extensions three-dots context menu stable while pages are still
+loading, and add a context menu entry to open an extension action popup as a
+full-screen dialog without losing the current tab context.
+
+This avoids losing "active tab" context for extensions like Tampermonkey and
+prevents nested list menus from being dismissed by transient layout churn.
+
+License: GPL-2.0-or-later - https://spdx.org/licenses/GPL-2.0-or-later.html
+FILE:Open-extension-popup-fullscreen.patch
+---
+diff --git a/ui/android/java/src/org/chromium/ui/listmenu/ListMenuHost.java b/ui/android/java/src/org/chromium/ui/listmenu/ListMenuHost.java
+--- a/ui/android/java/src/org/chromium/ui/listmenu/ListMenuHost.java
++++ b/ui/android/java/src/org/chromium/ui/listmenu/ListMenuHost.java
+@@ -191,6 +191,10 @@ public class ListMenuHost
+                         .setMaxWidth(mMenuMaxWidth)
+                         .setFocusable(true)
+                         .setAnimateFromAnchor(true)
++                        // When the menu's anchor view lives inside another PopupWindow, transient
++                        // layout updates can yield a temporarily small popup spec. Avoid
++                        // dismissing the menu in these cases.
++                        .setAllowNonTouchableSize(mRootView != null)
+                         .addOnDismissListener(
+                                 () -> {
+                                     notifyPopupListeners(false);
+@@ -293,6 +297,7 @@ public class ListMenuHost
+                         .setAnimationStyle(R.style.PopupWindowAnimFade)
+                         .setSpecCalculator(new FlyoutPopupSpecCalculator())
+                         .setDesiredContentWidth(menu.getMaxItemWidth() + lateralPadding)
++                        .setAllowNonTouchableSize(mRootView != null)
+                         .addOnDismissListener(
+                                 () -> {
+                                     if (!mRemovingPopups) {
+diff --git a/chrome/browser/ui/android/toolbar/java/src/org/chromium/chrome/browser/toolbar/extensions/ExtensionActionContextMenuUtils.java b/chrome/browser/ui/android/toolbar/java/src/org/chromium/chrome/browser/toolbar/extensions/ExtensionActionContextMenuUtils.java
+--- a/chrome/browser/ui/android/toolbar/java/src/org/chromium/chrome/browser/toolbar/extensions/ExtensionActionContextMenuUtils.java
++++ b/chrome/browser/ui/android/toolbar/java/src/org/chromium/chrome/browser/toolbar/extensions/ExtensionActionContextMenuUtils.java
+@@ -29,6 +29,12 @@ import org.chromium.ui.widget.RectProvider;
+ @NullMarked
+ public final class ExtensionActionContextMenuUtils {
+ 
++    /** Callback to mutate the context menu model before it is displayed. */
++    @FunctionalInterface
++    public interface ModelListModifier {
++        void modify(ModelList modelList);
++    }
++
+     private ExtensionActionContextMenuUtils() {}
+ 
+     /**
+@@ -48,7 +54,33 @@ public final class ExtensionActionContextMenuUtils {
+             ListMenuButton buttonView,
+             ExtensionActionContextMenuBridge bridge,
+             RectProvider rectProvider,
+-            @Nullable View rootView) {
++            @Nullable View rootView) {
++        showContextMenu(context, buttonView, bridge, rectProvider, rootView, null);
++    }
++
++    /**
++     * Creates and shows a ListMenu for the context menu.
++     *
++     * @param context The {@link Context} used to create the menu.
++     * @param buttonView The {@link ListMenuButton} to anchor the menu to and set the delegate for.
++     * @param bridge The {@link ExtensionActionContextMenuBridge} that provides the model and
++     *     lifecycle.
++     * @param rectProvider The {@link RectProvider} to use for positioning the menu.
++     * @param rootView The root {@link View}, if required by the buttonView.
++     * @param modelListModifier Optional callback to add or modify menu items before showing.
++     */
++    public static void showContextMenu(
++            Context context,
++            ListMenuButton buttonView,
++            ExtensionActionContextMenuBridge bridge,
++            RectProvider rectProvider,
++            @Nullable View rootView,
++            @Nullable ModelListModifier modelListModifier) {
+         ModelList modelList = bridge.getModelList();
++        if (modelListModifier != null) {
++            modelListModifier.modify(modelList);
++        }
+ 
+         ListMenu.Delegate buttonDelegate =
+                 new ListMenu.Delegate() {
+diff --git a/chrome/browser/ui/android/toolbar/java/src/org/chromium/chrome/browser/toolbar/extensions/ExtensionActionFullscreenPopup.java b/chrome/browser/ui/android/toolbar/java/src/org/chromium/chrome/browser/toolbar/extensions/ExtensionActionFullscreenPopup.java
+new file mode 100644
+--- /dev/null
++++ b/chrome/browser/ui/android/toolbar/java/src/org/chromium/chrome/browser/toolbar/extensions/ExtensionActionFullscreenPopup.java
+@@ -0,0 +1,101 @@
++// Copyright 2026 The Chromium Authors
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++package org.chromium.chrome.browser.toolbar.extensions;
++
++import android.app.Activity;
++import android.view.ViewGroup;
++import android.widget.FrameLayout;
++
++import org.chromium.base.lifetime.Destroyable;
++import org.chromium.base.version_info.VersionInfo;
++import org.chromium.build.NullUtil;
++import org.chromium.build.annotations.NullMarked;
++import org.chromium.chrome.R;
++import org.chromium.chrome.browser.ui.extensions.ExtensionActionPopupContents;
++import org.chromium.components.browser_ui.widget.ChromeDialog;
++import org.chromium.components.embedder_support.view.ContentView;
++import org.chromium.components.thinwebview.ThinWebView;
++import org.chromium.components.thinwebview.ThinWebViewConstraints;
++import org.chromium.components.thinwebview.ThinWebViewFactory;
++import org.chromium.content_public.browser.WebContents;
++import org.chromium.ui.base.ViewAndroidDelegate;
++import org.chromium.ui.base.WindowAndroid;
++import org.chromium.ui.edge_to_edge.EdgeToEdgeUtils;
++
++/** Displays an extension action popup page as a fullscreen dialog, while keeping tab context. */
++@NullMarked
++class ExtensionActionFullscreenPopup implements Destroyable {
++    private final String mActionId;
++    private final ExtensionActionPopupContents mContents;
++    private final ThinWebView mThinWebView;
++    private final ChromeDialog mDialog;
++
++    private boolean mDestroyed;
++
++    ExtensionActionFullscreenPopup(
++            Activity activity,
++            WindowAndroid windowAndroid,
++            String actionId,
++            ExtensionActionPopupContents contents) {
++        mActionId = actionId;
++        mContents = contents;
++
++        WebContents webContents = contents.getWebContents();
++
++        ContentView contentView = ContentView.createContentView(activity, webContents);
++
++        webContents.setDelegates(
++                VersionInfo.getProductVersion(),
++                ViewAndroidDelegate.createBasicDelegate(contentView),
++                contentView,
++                windowAndroid,
++                WebContents.createDefaultInternalsHolder());
++
++        mThinWebView =
++                ThinWebViewFactory.create(
++                        activity,
++                        new ThinWebViewConstraints(),
++                        NullUtil.assumeNonNull(windowAndroid.getIntentRequestTracker()));
++        mThinWebView.attachWebContents(webContents, contentView, null);
++
++        FrameLayout container = new FrameLayout(activity);
++        container.addView(
++                mThinWebView.getView(),
++                new FrameLayout.LayoutParams(
++                        ViewGroup.LayoutParams.MATCH_PARENT,
++                        ViewGroup.LayoutParams.MATCH_PARENT));
++
++        mDialog =
++                new ChromeDialog(
++                        activity,
++                        R.style.ThemeOverlay_BrowserUI_Fullscreen,
++                        EdgeToEdgeUtils.isEdgeToEdgeEverywhereEnabled());
++        mDialog.setContentView(container);
++        mDialog.setOnDismissListener((ignored) -> destroy());
++
++        contents.setDelegate(new ContentsDelegate());
++    }
++
++    String getActionId() {
++        return mActionId;
++    }
++
++    void show() {
++        if (mDestroyed) return;
++        mDialog.show();
++    }
++
++    void loadInitialPage() {
++        if (mDestroyed) return;
++        mContents.loadInitialPage();
++    }
++
++    @Override
++    public void destroy() {
++        if (mDestroyed) return;
++        mDestroyed = true;
++
++        mDialog.dismiss();
++        mThinWebView.destroy();
++        mContents.destroy();
++    }
++
++    private class ContentsDelegate implements ExtensionActionPopupContents.Delegate {
++        @Override
++        public void resizeDueToAutoResize(int width, int height) {}
++
++        @Override
++        public void onLoaded() {}
++
++        @Override
++        public void onClose() {
++            mDialog.dismiss();
++        }
++    }
++}
+diff --git a/chrome/browser/ui/android/toolbar/java/src/org/chromium/chrome/browser/toolbar/extensions/ExtensionsMenuMediator.java b/chrome/browser/ui/android/toolbar/java/src/org/chromium/chrome/browser/toolbar/extensions/ExtensionsMenuMediator.java
+--- a/chrome/browser/ui/android/toolbar/java/src/org/chromium/chrome/browser/toolbar/extensions/ExtensionsMenuMediator.java
++++ b/chrome/browser/ui/android/toolbar/java/src/org/chromium/chrome/browser/toolbar/extensions/ExtensionsMenuMediator.java
+@@ -5,6 +5,7 @@
+ 
+ package org.chromium.chrome.browser.toolbar.extensions;
+ 
++import android.app.Activity;
+ import android.content.Context;
+ import android.graphics.Bitmap;
+ import android.graphics.Rect;
+@@ -18,12 +19,18 @@ import org.chromium.build.annotations.Nullable;
+ import org.chromium.chrome.browser.extensions.ContextMenuSource;
+ import org.chromium.chrome.browser.profiles.Profile;
+ import org.chromium.chrome.browser.tab.Tab;
+ import org.chromium.chrome.browser.toolbar.extensions.ExtensionActionListCoordinator;
++import org.chromium.chrome.browser.ui.browser_window.ChromeAndroidTask;
+ import org.chromium.chrome.browser.ui.extensions.ExtensionAction;
+ import org.chromium.chrome.browser.ui.extensions.ExtensionActionContextMenuBridge;
+ import org.chromium.chrome.browser.ui.extensions.ExtensionActionsBridge;
++import org.chromium.chrome.browser.ui.extensions.ExtensionActionPopupContents;
+ import org.chromium.content_public.browser.WebContents;
++import org.chromium.ui.base.WindowAndroid;
+ import org.chromium.ui.listmenu.ListMenuButton;
++import org.chromium.ui.listmenu.ListMenuItemProperties;
++import org.chromium.ui.listmenu.ListItemType;
+ import org.chromium.ui.modelutil.MVCListAdapter.ListItem;
+ import org.chromium.ui.modelutil.MVCListAdapter.ModelList;
+ import org.chromium.ui.modelutil.PropertyModel;
+ import org.chromium.ui.widget.RectProvider;
+ 
++import java.util.function.Function;
++
+ /**
+  * Mediator for the extensions menu. This class is responsible for listening to changes in the
+  * extensions and updating the model accordingly.
+@@ -40,8 +47,10 @@ class ExtensionsMenuMediator implements Destroyable {
+     private final Callback<Profile> mProfileUpdatedCallback = this::onProfileUpdated;
+     private final View mRootView;
+     private final ExtensionActionListCoordinator mExtensionActionListCoordinator;
++    private final Function<Tab, ChromeAndroidTask> mTaskSupplier;
+ 
+     @Nullable private Profile mProfile;
++    @Nullable private ExtensionActionFullscreenPopup mCurrentFullscreenPopup;
+ 
+     public ExtensionsMenuMediator(
+             Context context,
+@@ -52,7 +61,9 @@ class ExtensionsMenuMediator implements Destroyable {
+             Runnable onUpdateFinishedRunnable,
+             Callback<Boolean> onExtensionsAvailableCallback,
+             View rootView,
+-            ExtensionActionListCoordinator extensionActionListCoordinator) {
++            ExtensionActionListCoordinator extensionActionListCoordinator,
++            Function<Tab, ChromeAndroidTask> taskSupplier) {
+         mExtensionActionListCoordinator = extensionActionListCoordinator;
++        mTaskSupplier = taskSupplier;
+         mProfileSupplier = profileSupplier;
+         mProfileSupplier.addObserver(mProfileUpdatedCallback);
+ 
+@@ -145,7 +156,13 @@ class ExtensionsMenuMediator implements Destroyable {
+         ExtensionActionContextMenuUtils.showContextMenu(
+                 mContext,
+                 buttonView,
+                 bridge,
+                 new RelativeViewRectProvider(buttonView, mRootView),
+-                mRootView);
++                mRootView,
++                (modelList) -> maybeAddOpenPopupFullscreenMenuItem(actionId, modelList));
+     }
+ 
+     @Override
+     public void destroy() {
++        closeFullscreenPopup();
+         mExtensionActionsUpdateHelper.destroy();
+         mProfileSupplier.removeObserver(mProfileUpdatedCallback);
+         mProfile = null;
+     }
+ 
++    private void maybeAddOpenPopupFullscreenMenuItem(String actionId, ModelList modelList) {
++        ExtensionActionsBridge extensionActionsBridge =
++                mExtensionActionsUpdateHelper.getExtensionActionsBridge();
++        Tab currentTab = mExtensionActionsUpdateHelper.getCurrentTab();
++        if (extensionActionsBridge == null || currentTab == null) {
++            return;
++        }
++
++        int tabId = currentTab.getId();
++        if (!extensionActionsBridge.actionHasPopup(actionId, tabId)) {
++            return;
++        }
++
++        modelList.add(new ListItem(ListItemType.DIVIDER, new PropertyModel()));
++        modelList.add(
++                new ListItem(
++                        ListItemType.MENU_ITEM,
++                        new PropertyModel.Builder(ListMenuItemProperties.ALL_KEYS)
++                                .with(
++                                        ListMenuItemProperties.TITLE,
++                                        mContext.getString(
++                                                org.chromium.chrome.browser.ui.extensions.R
++                                                        .string
++                                                        .extension_action_open_popup_fullscreen))
++                                .with(ListMenuItemProperties.ENABLED, true)
++                                .with(
++                                        ListMenuItemProperties.CLICK_LISTENER,
++                                        (view) -> openPopupFullscreen(actionId))
++                                .build()));
++    }
++
++    private void openPopupFullscreen(String actionId) {
++        closeFullscreenPopup();
++
++        Tab currentTab = mExtensionActionsUpdateHelper.getCurrentTab();
++        if (currentTab == null) {
++            return;
++        }
++
++        Context tabContext = currentTab.getContext();
++        if (!(tabContext instanceof Activity)) {
++            return;
++        }
++
++        WindowAndroid windowAndroid = currentTab.getWindowAndroid();
++        if (windowAndroid == null) {
++            return;
++        }
++
++        ChromeAndroidTask task = mTaskSupplier.apply(currentTab);
++        if (task == null) {
++            return;
++        }
++
++        ExtensionActionPopupContents contents =
++                ExtensionActionPopupContents.create(task, actionId, currentTab.getId());
++        if (contents == null) {
++            return;
++        }
++
++        mCurrentFullscreenPopup =
++                new ExtensionActionFullscreenPopup(
++                        (Activity) tabContext, windowAndroid, actionId, contents);
++        mCurrentFullscreenPopup.show();
++        mCurrentFullscreenPopup.loadInitialPage();
++    }
++
++    private void closeFullscreenPopup() {
++        if (mCurrentFullscreenPopup == null) {
++            return;
++        }
++        ExtensionActionFullscreenPopup popup = mCurrentFullscreenPopup;
++        mCurrentFullscreenPopup = null;
++        popup.destroy();
++    }
++
+     private class ActionsUpdateDelegate
+             implements ExtensionActionsUpdateHelper.ActionsUpdateDelegate {
+         @Override
+         public void onUpdateStarted() {}
+diff --git a/chrome/browser/ui/android/toolbar/java/src/org/chromium/chrome/browser/toolbar/extensions/ExtensionsMenuCoordinator.java b/chrome/browser/ui/android/toolbar/java/src/org/chromium/chrome/browser/toolbar/extensions/ExtensionsMenuCoordinator.java
+--- a/chrome/browser/ui/android/toolbar/java/src/org/chromium/chrome/browser/toolbar/extensions/ExtensionsMenuCoordinator.java
++++ b/chrome/browser/ui/android/toolbar/java/src/org/chromium/chrome/browser/toolbar/extensions/ExtensionsMenuCoordinator.java
+@@ -25,6 +25,7 @@ import org.chromium.chrome.browser.tab.TabLaunchType;
+ import org.chromium.chrome.browser.tabmodel.TabCreator;
+ import org.chromium.chrome.browser.theme.ThemeColorProvider;
+ import org.chromium.chrome.browser.toolbar.MenuBuilderHelper;
+ import org.chromium.chrome.browser.toolbar.extensions.ExtensionActionListCoordinator;
++import org.chromium.chrome.browser.ui.browser_window.ChromeAndroidTask;
+ import org.chromium.chrome.browser.ui.extensions.R;
+ import org.chromium.chrome.browser.ui.theme.BrandedColorScheme;
+ import org.chromium.components.embedder_support.util.UrlConstants;
+@@ -42,6 +43,8 @@ import org.chromium.ui.modelutil.PropertyModelChangeProcessor;
+ import org.chromium.ui.modelutil.SimpleRecyclerViewAdapter;
+ import org.chromium.ui.widget.RectProvider;
+ 
++import java.util.function.Function;
++
+ /**
+  * Coordinator for the extensions menu, accessed from the puzzle icon in the toolbar. This class is
+  * responsible for the button and the menu.
+@@ -77,6 +80,7 @@ public class ExtensionsMenuCoordinator implements Destroyable {
+      * @param profileSupplier Supplies the current {@link Profile}.
+      * @param currentTabSupplier Supplies the current {@link Tab}.
+      * @param tabCreator {@link TabCreator} to handle a new tab creation.
++     * @param taskSupplier Supplies the current {@link ChromeAndroidTask}.
+      */
+     public ExtensionsMenuCoordinator(
+             Context context,
+@@ -87,7 +91,8 @@ public class ExtensionsMenuCoordinator implements Destroyable {
+             ObservableSupplier<Profile> profileSupplier,
+             ObservableSupplier<Tab> currentTabSupplier,
+             TabCreator tabCreator,
+-            ExtensionActionListCoordinator extensionActionListCoordinator) {
++            ExtensionActionListCoordinator extensionActionListCoordinator,
++            Function<Tab, ChromeAndroidTask> taskSupplier) {
+         mContext = context;
+         mCurrentTabSupplier = currentTabSupplier;
+         mTabCreator = tabCreator;
+@@ -156,7 +161,9 @@ public class ExtensionsMenuCoordinator implements Destroyable {
+                         },
+                         mExtensionsMenuButton.getRootView(),
+-                        extensionActionListCoordinator);
++                        extensionActionListCoordinator,
++                        taskSupplier);
+     }
+diff --git a/chrome/browser/ui/android/toolbar/java/src/org/chromium/chrome/browser/toolbar/extensions/ExtensionToolbarCoordinatorImpl.java b/chrome/browser/ui/android/toolbar/java/src/org/chromium/chrome/browser/toolbar/extensions/ExtensionToolbarCoordinatorImpl.java
+--- a/chrome/browser/ui/android/toolbar/java/src/org/chromium/chrome/browser/toolbar/extensions/ExtensionToolbarCoordinatorImpl.java
++++ b/chrome/browser/ui/android/toolbar/java/src/org/chromium/chrome/browser/toolbar/extensions/ExtensionToolbarCoordinatorImpl.java
+@@ -83,7 +83,8 @@ public class ExtensionToolbarCoordinatorImpl implements ExtensionToolbarCoordina
+                         profileSupplier,
+                         currentTabSupplier,
+                         tabCreator,
+-                        mExtensionActionListCoordinator);
++                        mExtensionActionListCoordinator,
++                        taskSupplier);
+     }
+diff --git a/chrome/browser/ui/android/extensions/java/src/org/chromium/chrome/browser/ui/extensions/ExtensionActionsBridge.java b/chrome/browser/ui/android/extensions/java/src/org/chromium/chrome/browser/ui/extensions/ExtensionActionsBridge.java
+--- a/chrome/browser/ui/android/extensions/java/src/org/chromium/chrome/browser/ui/extensions/ExtensionActionsBridge.java
++++ b/chrome/browser/ui/android/extensions/java/src/org/chromium/chrome/browser/ui/extensions/ExtensionActionsBridge.java
+@@ -144,6 +144,12 @@ public class ExtensionActionsBridge {
+         return ExtensionActionsBridgeJni.get()
+                 .runAction(mNativeExtensionActionsBridge, actionId, tabId, webContents);
+     }
+ 
++    /** Returns whether the action has a popup for the specified tab. */
++    public boolean actionHasPopup(String actionId, int tabId) {
++        return ExtensionActionsBridgeJni.get()
++                .actionHasPopup(mNativeExtensionActionsBridge, actionId, tabId);
++    }
++
+     /**
+      * Returns whether the extensions are disabled on the profile for Desktop Android. This is
+      * temporary for until extensions are ready for dogfooding. TODO(crbug.com/422307625): Remove
+@@ -273,6 +279,11 @@ public class ExtensionActionsBridge {
+                 @JniType("std::string") String actionId,
+                 int tabId,
+                 @JniType("content::WebContents*") WebContents webContents);
++        boolean actionHasPopup(
++                long nativeExtensionActionsBridge,
++                @JniType("std::string") String actionId,
++                int tabId);
+ 
+         boolean extensionsEnabled(long nativeExtensionActionsBridge);
+ 
+diff --git a/chrome/browser/ui/android/extensions/extension_actions_bridge.h b/chrome/browser/ui/android/extensions/extension_actions_bridge.h
+--- a/chrome/browser/ui/android/extensions/extension_actions_bridge.h
++++ b/chrome/browser/ui/android/extensions/extension_actions_bridge.h
+@@ -53,6 +53,9 @@ class ExtensionActionsBridge : public ToolbarActionsModel::Observer,
+       const ToolbarActionsModel::ActionId& action_id,
+       int tab_id,
+       content::WebContents* web_contents);
++  bool ActionHasPopup(JNIEnv* env,
++                      const ToolbarActionsModel::ActionId& action_id,
++                      int tab_id);
+   bool ExtensionsEnabled(JNIEnv* env);
+   void ClearExtensionData(JNIEnv* env);
+   void CloseBackgroundHosts(JNIEnv* env);
+diff --git a/chrome/browser/ui/android/extensions/extension_actions_bridge.cc b/chrome/browser/ui/android/extensions/extension_actions_bridge.cc
+--- a/chrome/browser/ui/android/extensions/extension_actions_bridge.cc
++++ b/chrome/browser/ui/android/extensions/extension_actions_bridge.cc
+@@ -206,6 +206,30 @@ ExtensionAction::ShowAction ExtensionActionsBridge::RunAction(
+ 
+   return runner->RunAction(extension, /*grant_tab_permissions=*/true);
+ }
+ 
++bool ExtensionActionsBridge::ActionHasPopup(
++    JNIEnv* env,
++    const ToolbarActionsModel::ActionId& action_id,
++    int tab_id) {
++  ExtensionRegistry* registry = ExtensionRegistry::Get(profile_);
++  DCHECK(registry);
++  ExtensionActionManager* manager = ExtensionActionManager::Get(profile_);
++  DCHECK(manager);
++
++  const Extension* extension =
++      registry->enabled_extensions().GetByID(action_id);
++  if (extension == nullptr) {
++    return false;
++  }
++
++  ExtensionAction* action = manager->GetExtensionAction(*extension);
++  if (action == nullptr) {
++    return false;
++  }
++
++  return action->HasPopup(tab_id);
++}
++
+ bool ExtensionActionsBridge::ExtensionsEnabled(JNIEnv* env) {
+   ExtensionManagement* extension_management =
+       ExtensionManagementFactory::GetForBrowserContext(profile_);
+diff --git a/chrome/browser/ui/android/extensions/javatests/src/org/chromium/chrome/browser/ui/extensions/FakeExtensionActionsBridge.java b/chrome/browser/ui/android/extensions/javatests/src/org/chromium/chrome/browser/ui/extensions/FakeExtensionActionsBridge.java
+--- a/chrome/browser/ui/android/extensions/javatests/src/org/chromium/chrome/browser/ui/extensions/FakeExtensionActionsBridge.java
++++ b/chrome/browser/ui/android/extensions/javatests/src/org/chromium/chrome/browser/ui/extensions/FakeExtensionActionsBridge.java
+@@ -369,6 +369,12 @@ public class FakeExtensionActionsBridge {
+                     .getActionRunner()
+                     .runAction();
+         }
+ 
++        @Override
++        public boolean actionHasPopup(long nativeExtensionActionsBridge, String actionId, int tabId) {
++            // Most tests don't care; default to false unless explicitly modeled.
++            return false;
++        }
++
+         @Override
+         public boolean extensionsEnabled(long nativeExtensionActionsBridge) {
+             return getProfileModelOrThrow(nativeExtensionActionsBridge).isEnabled();
+diff --git a/chrome/app/generated_resources.grd b/chrome/app/generated_resources.grd
+--- a/chrome/app/generated_resources.grd
++++ b/chrome/app/generated_resources.grd
+@@ -5967,6 +5967,9 @@
+           <message name="IDS_VIEW_WEB_PERMISSIONS" desc="The text for the button in the extension context menu used to open the chrome://settings/content/siteDetails?site=xxx page and view the site details for a specific extension (sentence case).">
+             View web permissions
+           </message>
++          <message name="IDS_EXTENSION_ACTION_OPEN_POPUP_FULLSCREEN" desc="The text for the context menu item that opens the extension action popup page in fullscreen (sentence case)." formatter_data="android_java">
++            Open popup full screen
++          </message>
+           <message name="IDS_EXTENSION_ACTION_INSPECT_POPUP" desc="The text for the right-click menu of page and browser actions which shows the popup and opens the developer tools (sentence case).">
+             Inspect popup
+           </message>
+@@ -6041,6 +6044,9 @@
+           <message name="IDS_VIEW_WEB_PERMISSIONS" desc="The text for the button in the extension context menu used to open the chrome://settings/content/siteDetails?site=xxx page and view the site details for a specific extension (title case).">
+             View Web Permissions
+           </message>
++          <message name="IDS_EXTENSION_ACTION_OPEN_POPUP_FULLSCREEN" desc="The text for the context menu item that opens the extension action popup page in fullscreen (title case)." formatter_data="android_java">
++            Open Popup Full Screen
++          </message>
+           <message name="IDS_EXTENSION_ACTION_INSPECT_POPUP" desc="The text for the right-click menu of page and browser actions which shows the popup and opens the developer tools (title case).">
+             Inspect Popup
+           </message>
+diff --git a/chrome/browser/ui/android/toolbar/java/src/org/chromium/chrome/browser/toolbar/extensions/ExtensionsMenuMediatorTest.java b/chrome/browser/ui/android/toolbar/java/src/org/chromium/chrome/browser/toolbar/extensions/ExtensionsMenuMediatorTest.java
+--- a/chrome/browser/ui/android/toolbar/java/src/org/chromium/chrome/browser/toolbar/extensions/ExtensionsMenuMediatorTest.java
++++ b/chrome/browser/ui/android/toolbar/java/src/org/chromium/chrome/browser/toolbar/extensions/ExtensionsMenuMediatorTest.java
+@@ -127,7 +127,9 @@ public class ExtensionsMenuMediatorTest {
+                         mModels,
+                         mDataReadyCallback,
+                         mOnExtensionsSupportedCallback,
+-                        null);
++                        new View(ApplicationProvider.getApplicationContext()),
++                        mock(ExtensionActionListCoordinator.class),
++                        (tab) -> null);
+ 
+         // Wait for the main thread to settle.
+         shadowOf(Looper.getMainLooper()).idle();
+diff --git a/chrome/browser/ui/android/toolbar/java/src/org/chromium/chrome/browser/toolbar/extensions/ExtensionsMenuCoordinatorTest.java b/chrome/browser/ui/android/toolbar/java/src/org/chromium/chrome/browser/toolbar/extensions/ExtensionsMenuCoordinatorTest.java
+--- a/chrome/browser/ui/android/toolbar/java/src/org/chromium/chrome/browser/toolbar/extensions/ExtensionsMenuCoordinatorTest.java
++++ b/chrome/browser/ui/android/toolbar/java/src/org/chromium/chrome/browser/toolbar/extensions/ExtensionsMenuCoordinatorTest.java
+@@ -96,7 +96,9 @@ public class ExtensionsMenuCoordinatorTest {
+                         mThemeColorProvider,
+                         mProfileSupplier,
+                         mCurrentTabSupplier,
+-                        mTabCreator);
++                        mTabCreator,
++                        mock(ExtensionActionListCoordinator.class),
++                        (tab) -> null);
+ 
+         // Ensure the tab / profile suppliers have triggered their initial callbacks.
+         Shadows.shadowOf(Looper.getMainLooper()).idle();
+@@ -117,7 +119,9 @@ public class ExtensionsMenuCoordinatorTest {
+                         mThemeColorProvider,
+                         mProfileSupplier,
+                         mCurrentTabSupplier,
+-                        mTabCreator);
++                        mTabCreator,
++                        mock(ExtensionActionListCoordinator.class),
++                        (tab) -> null);
+ 
+         ListMenuHost.PopupMenuShownListener shownListener =
+                 Mockito.mock(ListMenuHost.PopupMenuShownListener.class);
+-- 
