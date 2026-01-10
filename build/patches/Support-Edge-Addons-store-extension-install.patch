@@ -51,7 +51,8 @@ new file mode 100644
 +@NullMarked
 +public final class EdgeAddonsStoreSupport {
 +    private static final String EDGE_ADDONS_HOST = "microsoftedge.microsoft.com";
-+    private static final String EDGE_ADDONS_PATH_PREFIX = "/addons";
++    private static final String EDGE_ADDONS_URL_PREFIX = "https://" + EDGE_ADDONS_HOST + "/";
++    private static final String EDGE_ADDONS_PATH_PREFIX = EDGE_ADDONS_URL_PREFIX + "addons";
 +
 +    private static final String MAKE_USER_AGENT_WRITABLE =
 +            ""
@@ -82,7 +83,10 @@ new file mode 100644
 +            ""
 +                    + "(function() {"
 +                    + "  try {"
-+                    + "    if (!document.location.href.includes('https://microsoftedge.microsoft.com/addons')) return;"
++                    + "    if (document.location.hostname !== 'microsoftedge.microsoft.com') return;"
++                    + "    if (!document.location.pathname.startsWith('/addons')"
++                    + "        && document.location.pathname !== '/'"
++                    + "        && document.location.pathname !== '') return;"
 +                    + MAKE_USER_AGENT_WRITABLE
 +                    + "    try {"
 +                    + "      var ua = window.navigator.userAgent || '';"
@@ -131,16 +135,28 @@ new file mode 100644
 +    public static void maybeInject(Tab tab) {
 +        if (tab == null) return;
 +
-+        GURL url = tab.getUrl();
-+        if (url.isEmpty()) return;
-+        if (!"https".equals(url.getScheme())) return;
-+        if (!EDGE_ADDONS_HOST.equals(url.getHost())) return;
-+        if (!url.getPath().startsWith(EDGE_ADDONS_PATH_PREFIX)) return;
++        try {
++            WebContents webContents = tab.getWebContents();
++            if (webContents == null) return;
 +
-+        WebContents webContents = tab.getWebContents();
-+        if (webContents == null) return;
++            GURL url = tab.getUrl();
++            String spec = url.getSpec();
++            if (!spec.startsWith(EDGE_ADDONS_URL_PREFIX)) return;
 +
-+        webContents.evaluateJavaScript(EDGE_ADDONS_SCRIPT, null);
++            // Match both https://microsoftedge.microsoft.com/ and /addons pages. The injected script
++            // no-ops if the store UI is not present.
++            if (!(spec.equals(EDGE_ADDONS_URL_PREFIX)
++                    || spec.equals(
++                            EDGE_ADDONS_URL_PREFIX.substring(
++                                    0, EDGE_ADDONS_URL_PREFIX.length() - 1))
++                    || spec.startsWith(EDGE_ADDONS_PATH_PREFIX))) {
++                return;
++            }
++
++            webContents.evaluateJavaScript(EDGE_ADDONS_SCRIPT, null);
++        } catch (Throwable t) {
++            // Do not crash the browser process due to a bad URL state during navigation.
++        }
 +    }
 +}
 diff --git a/chrome/android/java/src/org/chromium/chrome/browser/app/ChromeActivity.java b/chrome/android/java/src/org/chromium/chrome/browser/app/ChromeActivity.java
