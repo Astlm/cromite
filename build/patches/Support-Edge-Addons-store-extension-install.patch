@@ -1,0 +1,176 @@
+From 58e21ed2a82c3f4af9e6c1446d0a819267e8c1d8 Mon Sep 17 00:00:00 2001
+From: cromite <cromite@users.noreply.github.com>
+Date: Sat, 10 Jan 2026 12:00:00 +0000
+Subject: [PATCH] Support Edge Add-ons store extension install
+
+Enable installing extensions from the Microsoft Edge Add-ons store on Android.
+
+This follows Kiwi Browser's approach: inject JavaScript on Edge Add-ons pages
+to spoof an Edge-like UA and replace the "Get" button with a direct CRX3
+download link.
+
+Also allow "Request desktop site" by default for the Edge Add-ons domain to
+ensure the desktop store UI is consistently used.
+
+License: GPL-2.0-or-later - https://spdx.org/licenses/GPL-2.0-or-later.html
+FILE:Support-Edge-Addons-store-extension-install.patch
+---
+diff --git a/chrome/android/chrome_java_sources.gni b/chrome/android/chrome_java_sources.gni
+--- a/chrome/android/chrome_java_sources.gni
++++ b/chrome/android/chrome_java_sources.gni
+@@ -21,6 +21,7 @@ chrome_java_sources = [
+   "java/src/org/chromium/chrome/browser/DefaultBrowserInfo.java",
+   "java/src/org/chromium/chrome/browser/DefaultBrowserInfoUmaRecorder.java",
+   "java/src/org/chromium/chrome/browser/DevToolsServer.java",
++  "java/src/org/chromium/chrome/browser/EdgeAddonsStoreSupport.java",
+   "java/src/org/chromium/chrome/browser/FileProviderHelper.java",
+   "java/src/org/chromium/chrome/browser/IntentHandler.java",
+   "java/src/org/chromium/chrome/browser/KeyboardShortcuts.java",
+diff --git a/chrome/android/java/src/org/chromium/chrome/browser/EdgeAddonsStoreSupport.java b/chrome/android/java/src/org/chromium/chrome/browser/EdgeAddonsStoreSupport.java
+new file mode 100644
+--- /dev/null
++++ b/chrome/android/java/src/org/chromium/chrome/browser/EdgeAddonsStoreSupport.java
+@@ -0,0 +1,105 @@
++// Copyright 2026 The Chromium Authors
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++package org.chromium.chrome.browser;
++
++import org.chromium.build.annotations.NullMarked;
++import org.chromium.chrome.browser.tab.Tab;
++import org.chromium.content_public.browser.WebContents;
++import org.chromium.url.GURL;
++
++/**
++ * Enables downloading CRX3 packages from the Microsoft Edge Add-ons store on Android.
++ *
++ * <p>Implemented similarly to Kiwi Browser: inject a small script on Edge Add-ons pages to (1)
++ * spoof an Edge-like user agent and (2) replace the "Get" button with a direct CRX3 download link.
++ */
++@NullMarked
++public final class EdgeAddonsStoreSupport {
++    private static final String EDGE_ADDONS_HOST = "microsoftedge.microsoft.com";
++    private static final String EDGE_ADDONS_PATH_PREFIX = "/addons";
++
++    private static final String MAKE_USER_AGENT_WRITABLE =
++            ""
++                    + "(function() {"
++                    + "    function createProperty(value) {"
++                    + "        var _value = value;"
++                    + "        function _get() { return _value }"
++                    + "        function _set(v) { _value = v }"
++                    + "        return { 'get': _get, 'set': _set }"
++                    + "    };"
++                    + "    function makePropertyWritable(objBase, objScopeName, propName, initValue) {"
++                    + "        var newProp, initObj;"
++                    + "        if (objBase && objScopeName in objBase && propName in objBase[objScopeName]) {"
++                    + "            if (typeof initValue === 'undefined') { initValue = objBase[objScopeName][propName] }"
++                    + "            newProp = createProperty(initValue);"
++                    + "            try {"
++                    + "                Object.defineProperty(objBase[objScopeName], propName, newProp)"
++                    + "            } catch (e) {"
++                    + "                initObj = {}; initObj[propName] = newProp;"
++                    + "                try { objBase[objScopeName] = Object.create(objBase[objScopeName], initObj) } catch (e) {}"
++                    + "            }"
++                    + "        }"
++                    + "    };"
++                    + "    makePropertyWritable(window, 'navigator', 'userAgent');"
++                    + "})();";
++
++    private static final String EDGE_ADDONS_SCRIPT =
++            ""
++                    + "(function() {"
++                    + "  try {"
++                    + "    if (!document.location.href.startsWith('https://microsoftedge.microsoft.com/addons')) return;"
++                    + MAKE_USER_AGENT_WRITABLE
++                    + "    try {"
++                    + "      var ua = window.navigator.userAgent || '';"
++                    + "      if (!ua.includes(' Edg/')) {"
++                    + "        var m = window.navigator.appVersion.match(/Chrome\\/(\\d+(?:\\.\\d+)+)/);"
++                    + "        if (m && m[1]) window.navigator.userAgent = ua + ' Edg/' + m[1];"
++                    + "      }"
++                    + "    } catch (e) {}"
++                    + "    function cromiteEdgeAddonsPatchButtons() {"
++                    + "      try {"
++                    + "        var buttons = document.querySelectorAll('button[id*=\"getOrRemoveButton\"]');"
++                    + "        for (var i = 0; i < buttons.length; i++) {"
++                    + "          var b = buttons[i];"
++                    + "          if (b.getAttribute('data-cromite-edge-addons') === '1') continue;"
++                    + "          var extId = b.id || '';"
++                    + "          if (extId.includes('-')) extId = extId.split('-').pop();"
++                    + "          if (!extId || extId.length !== 32) {"
++                    + "            var m2 = document.location.pathname.match(/\\/addons\\/detail\\/(?:[^\\/]+\\/)?([a-p]{32})/i);"
++                    + "            if (m2 && m2[1]) extId = m2[1];"
++                    + "          }"
++                    + "          if (!extId || extId.length !== 32) continue;"
++                    + "          b.setAttribute('data-cromite-edge-addons', '1');"
++                    + "          b.removeAttribute('disabled');"
++                    + "          b.setAttribute('style', 'opacity: 1; background: rgb(0, 120, 212) !important; height: 60px; cursor: pointer !important;');"
++                    + "          var crxUrl = 'https://edge.microsoft.com/extensionwebstorebase/v1/crx?response=redirect&acceptformat=crx3&x=id%3D'"
++                    + "              + extId + '%26installsource%3Dondemand%26uc';"
++                    + "          b.innerHTML = \"<a href=\\\"\" + crxUrl + \"\\\" target='_blank' style='color: white; text-decoration: none'><b>Get CRX</b><br>(Download)</a>\";"
++                    + "        }"
++                    + "      } catch (e) {}"
++                    + "    }"
++                    + "    cromiteEdgeAddonsPatchButtons();"
++                    + "    try { if (window.__cromiteEdgeAddonsObserver) window.__cromiteEdgeAddonsObserver.disconnect(); } catch (e) {}"
++                    + "    window.__cromiteEdgeAddonsObserver = new MutationObserver(function() { cromiteEdgeAddonsPatchButtons(); });"
++                    + "    window.__cromiteEdgeAddonsObserver.observe(document.documentElement || document, {subtree: true, childList: true});"
++                    + "  } catch (e) {}"
++                    + "})();";
++
++    private EdgeAddonsStoreSupport() {}
++
++    public static void maybeInject(Tab tab) {
++        if (tab == null) return;
++
++        GURL url = tab.getUrl();
++        if (url.isEmpty()) return;
++        if (!"https".equals(url.getScheme())) return;
++        if (!EDGE_ADDONS_HOST.equals(url.getHost())) return;
++        if (!url.getPath().startsWith(EDGE_ADDONS_PATH_PREFIX)) return;
++
++        WebContents webContents = tab.getWebContents();
++        if (webContents == null) return;
++
++        webContents.evaluateJavaScript(EDGE_ADDONS_SCRIPT, null);
++    }
++}
+diff --git a/chrome/android/java/src/org/chromium/chrome/browser/app/ChromeActivity.java b/chrome/android/java/src/org/chromium/chrome/browser/app/ChromeActivity.java
+--- a/chrome/android/java/src/org/chromium/chrome/browser/app/ChromeActivity.java
++++ b/chrome/android/java/src/org/chromium/chrome/browser/app/ChromeActivity.java
+@@ -73,6 +73,7 @@ import org.chromium.chrome.browser.ChromeWindow;
+ import org.chromium.chrome.browser.DeferredStartupHandler;
+ import org.chromium.chrome.browser.IntentHandler;
++import org.chromium.chrome.browser.EdgeAddonsStoreSupport;
+ import org.chromium.chrome.browser.PlayServicesVersionInfo;
+ import org.chromium.chrome.browser.TabStateThemeResourceProvider;
+ import org.chromium.chrome.browser.WarmupManager;
+@@ -945,6 +946,11 @@ public abstract class ChromeActivity extends AsyncInitializationActivity
+                     public void onCrash(Tab tab) {
+                         postDeferredStartupIfNeeded();
+                     }
++
++                    @Override
++                    public void onUrlUpdated(Tab tab) {
++                        EdgeAddonsStoreSupport.maybeInject(tab);
++                    }
+                 };
+     }
+diff --git a/components/content_settings/core/browser/host_content_settings_map.cc b/components/content_settings/core/browser/host_content_settings_map.cc
+--- a/components/content_settings/core/browser/host_content_settings_map.cc
++++ b/components/content_settings/core/browser/host_content_settings_map.cc
+@@ -332,6 +332,9 @@ HostContentSettingsMap::HostContentSettingsMap(PrefService* prefs,
+   SetContentSettingDefaultScope(
+     GURL("https://chromewebstore.google.com"), GURL(),
+     ContentSettingsType::REQUEST_DESKTOP_SITE, CONTENT_SETTING_ALLOW);
++  SetContentSettingDefaultScope(
++    GURL("https://microsoftedge.microsoft.com"), GURL(),
++    ContentSettingsType::REQUEST_DESKTOP_SITE, CONTENT_SETTING_ALLOW);
+ #endif
+ 
+   const auto* registry =
+-- 
+2.47.3
+

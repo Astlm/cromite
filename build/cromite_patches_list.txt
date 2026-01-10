@@ -330,3 +330,4 @@ Enable-extension-in-incognito.patch
 Extensions-install-from-zip-crx-userjs-button.patch
 Fix-extensions-menu-dismiss-on-updates.patch
 Open-extension-popup-fullscreen.patch
+Support-Edge-Addons-store-extension-install.patch
