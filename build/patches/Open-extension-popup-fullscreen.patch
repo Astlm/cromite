@@ -177,6 +177,13 @@ new file mode 100644
 +                        NullUtil.assumeNonNull(windowAndroid.getIntentRequestTracker()));
 +        mThinWebView.attachWebContents(webContents, contentView, null);
 +
++        mDialog =
++                new ChromeDialog(
++                        activity,
++                        org.chromium.components.browser_ui.widget.R.style
++                                .ThemeOverlay_BrowserUI_Fullscreen,
++                        EdgeToEdgeUtils.isEdgeToEdgeEverywhereEnabled());
++
 +        Toolbar toolbar = new Toolbar(activity);
 +        toolbar.setTitle(mTitle);
 +        toolbar.setNavigationIcon(org.chromium.ui.R.drawable.ic_arrow_back_24dp);
@@ -202,12 +209,6 @@ new file mode 100644
 +                        ViewGroup.LayoutParams.MATCH_PARENT,
 +                        ViewGroup.LayoutParams.MATCH_PARENT));
 +
-+        mDialog =
-+                new ChromeDialog(
-+                        activity,
-+                        org.chromium.components.browser_ui.widget.R.style
-+                                .ThemeOverlay_BrowserUI_Fullscreen,
-+                        EdgeToEdgeUtils.isEdgeToEdgeEverywhereEnabled());
 +        mDialog.setContentView(container);
 +        mDialog.setOnDismissListener((ignored) -> destroy());
 +
