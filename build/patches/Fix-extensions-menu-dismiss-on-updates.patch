@@ -1,0 +1,98 @@
+From d367397d77525735ca9eb5a49ae429633d43a79f Mon Sep 17 00:00:00 2001
+From: cromite <cromite@users.noreply.github.com>
+Date: Sat, 10 Jan 2026 10:00:00 +0000
+Subject: [PATCH] Fix-extensions-menu-dismiss-on-updates
+
+Prevent the puzzle-button extensions list menu from dismissing itself while a
+page is still loading.
+
+ExtensionsMenuCoordinator was resetting the ListMenuDelegate after every
+extension actions update. ListMenuHost#setDelegate() dismisses any currently
+showing menu, so if actions update shortly after opening the menu (common during
+page load), the menu can disappear immediately.
+
+Set the delegate once and toggle the menu directly from the button.
+
+License: GPL-2.0-or-later - https://spdx.org/licenses/GPL-2.0-or-later.html
+FILE:Fix-extensions-menu-dismiss-on-updates.patch
+---
+diff --git a/chrome/browser/ui/android/toolbar/java/src/org/chromium/chrome/browser/toolbar/extensions/ExtensionsMenuCoordinator.java b/chrome/browser/ui/android/toolbar/java/src/org/chromium/chrome/browser/toolbar/extensions/ExtensionsMenuCoordinator.java
+--- a/chrome/browser/ui/android/toolbar/java/src/org/chromium/chrome/browser/toolbar/extensions/ExtensionsMenuCoordinator.java
++++ b/chrome/browser/ui/android/toolbar/java/src/org/chromium/chrome/browser/toolbar/extensions/ExtensionsMenuCoordinator.java
+@@ -62,8 +62,6 @@
+ 
+     @Nullable @VisibleForTesting ExtensionsMenuMediator mMediator;
+ 
+-    private boolean mShouldShowMenuOnInit;
+-
+     /**
+      * Constructor.
+      *
+@@ -90,7 +88,6 @@
+         mTabCreator = tabCreator;
+ 
+         mExtensionsMenuButton = extensionsMenuButton;
+-        mExtensionsMenuButton.setOnClickListener(view -> mShouldShowMenuOnInit = true);
+         mExtensionsMenuButton.setMenuMaxWidth(
+                 context.getResources().getDimensionPixelSize(R.dimen.extension_menu_max_width));
+ 
+@@ -127,36 +124,35 @@
+                     }
+                 };
+ 
++        ListMenuDelegate listMenuDelegate =
++                new ListMenuDelegate() {
++                    @Override
++                    public RectProvider getRectProvider(View listMenuHostingView) {
++                        return MenuBuilderHelper.getRectProvider(mExtensionsMenuButton);
++                    }
++
++                    @Override
++                    public ListMenu getListMenu() {
++                        return listMenu;
++                    }
++                };
++        mExtensionsMenuButton.setDelegate(listMenuDelegate, /* overrideOnClickListener= */ false);
++        mExtensionsMenuButton.setOnClickListener(
++                view -> {
++                    if (mExtensionsMenuButton.getHost().isMenuShowing()) {
++                        mExtensionsMenuButton.dismiss();
++                    } else {
++                        mExtensionsMenuButton.showMenu();
++                    }
++                });
++
+         mMediator =
+                 new ExtensionsMenuMediator(
+                         mContext,
+                         profileSupplier,
+                         mCurrentTabSupplier,
+                         mExtensionModels,
+-                        () -> {
+-                            mExtensionsMenuButton.setDelegate(
+-                                    new ListMenuDelegate() {
+-                                        @Override
+-                                        public RectProvider getRectProvider(
+-                                                View listMenuHostingView) {
+-                                            return MenuBuilderHelper.getRectProvider(
+-                                                    mExtensionsMenuButton);
+-                                        }
+-
+-                                        @Override
+-                                        public ListMenu getListMenu() {
+-                                            return listMenu;
+-                                        }
+-                                    });
+-                            if (mShouldShowMenuOnInit) {
+-                                if (mExtensionsMenuButton.getHost().isMenuShowing()) {
+-                                    mExtensionsMenuButton.dismiss();
+-                                } else {
+-                                    mExtensionsMenuButton.showMenu();
+-                                }
+-                                mShouldShowMenuOnInit = false;
+-                            }
+-                        },
++                        () -> {},
+                         (extensionsSupported) -> {
+                             int visibility = extensionsSupported ? View.VISIBLE : View.GONE;
+                             mExtensionsMenuButton.setVisibility(visibility);

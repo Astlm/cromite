@@ -328,3 +328,4 @@ Experimental-support-for-extensions-on-Android.patch
 Backport-v144-android-extensions-changes.patch
 Enable-extension-in-incognito.patch
 Extensions-install-from-zip-crx-userjs-button.patch
+Fix-extensions-menu-dismiss-on-updates.patch
