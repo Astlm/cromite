@@ -133,13 +133,13 @@ Disable-Accessibility-service-by-default.patch
 Disable-conversion-measurement-api.patch
 Restore-offline-indicator-v2-flag.patch
 Re-introduce-override_build_timestamp.patch
-enable-ftrivial-auto-var-init-zero.patch
+-enable-ftrivial-auto-var-init-zero.patch
 disable-appending-variations-header.patch
 Disable-idle-detection.patch
 Disable-minidump-upload-scheduling.patch
 Revert-Permit-blocking-of-view-source.patch
 Disable-safety-check.patch
-Disable-all-predictors-code.patch
+-Disable-all-predictors-code.patch
 OpenSearch-miscellaneous.patch
 Add-flag-for-save-data-header.patch
 Disable-UA-full-version.patch
@@ -306,10 +306,10 @@ Set-caret-blink-interval-to-default.patch
 Set-the-screen-frame-rate-to-60-Hz.patch
 Disable-Device-Attributes-API.patch
 Add-setting-to-enable-Credman-for-passkeys.patch
-Temp-disable-UseContextSnapshot.patch
+-Temp-disable-UseContextSnapshot.patch
 Enable-ClientHello-Segmentation.patch
 Disable-Sticky-User-Activation-Across-Same-Origin-Navigation.patch
-Supporting-Dangling-Ptr-Detection-via-BackupRefPtr.patch
+-Supporting-Dangling-Ptr-Detection-via-BackupRefPtr.patch
 
 # temporary or wip patches
 Temp-PerformanceNavigationTiming-privacy-fix.patch
