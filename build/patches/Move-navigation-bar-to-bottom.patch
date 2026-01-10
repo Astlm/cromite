@@ -2752,7 +2752,16 @@ diff --git a/chrome/browser/ui/android/toolbar/java/src/org/chromium/chrome/brow
                  !isTablet
                          && !mLocationBarDataProvider.isIncognitoBranded()
                          && !ColorUtils.inNightMode(mContext);
-+        mScrimModel.set(ScrimProperties.BACKGROUND_COLOR, Color.TRANSPARENT);
+-        mScrimModel.set(
+-                ScrimProperties.BACKGROUND_COLOR,
+-                useLightColor ? mLightScrimColor : ScrimProperties.INVALID_COLOR);
++        if (ChromeFeatureList.sMoveTopToolbarToBottom.isEnabled()) {
++            mScrimModel.set(ScrimProperties.BACKGROUND_COLOR, Color.TRANSPARENT);
++        } else {
++            mScrimModel.set(
++                    ScrimProperties.BACKGROUND_COLOR,
++                    useLightColor ? mLightScrimColor : ScrimProperties.INVALID_COLOR);
++        }
  
          if (hasFocus && !showScrimAfterAnimationCompletes()) {
 diff --git a/chrome/browser/ui/android/toolbar/java/src/org/chromium/chrome/browser/toolbar/ToolbarLongPressMenuHandler.java b/chrome/browser/ui/android/toolbar/java/src/org/chromium/chrome/browser/toolbar/ToolbarLongPressMenuHandler.java
