@@ -3093,11 +3093,10 @@ new file mode 100644
 diff --git a/components/content_settings/core/common/content_settings.cc b/components/content_settings/core/common/content_settings.cc
 --- a/components/content_settings/core/common/content_settings.cc
 +++ b/components/content_settings/core/common/content_settings.cc
-@@ -18,11 +18,12 @@
+@@ -18,11 +18,11 @@
  #include "components/content_settings/core/common/content_settings_metadata.h"
  #include "components/content_settings/core/common/content_settings_types.h"
  #include "components/content_settings/core/common/content_settings_utils.h"
-+#include "components/content_settings/core/browser/website_settings_registry.h"
  #include "third_party/abseil-cpp/absl/functional/overload.h"
  
  namespace {
@@ -3107,20 +3106,32 @@ diff --git a/components/content_settings/core/common/content_settings.cc b/compo
                          const GURL& primary_url) {
    std::erase_if(settings,
                  [&primary_url](const ContentSettingPatternSource& source) {
-@@ -106,6 +107,13 @@ std::ostream& operator<<(std::ostream& os,
+@@ -106,8 +107,19 @@ std::ostream& operator<<(std::ostream& os,
  // static
  bool RendererContentSettingRules::IsRendererContentSetting(
      ContentSettingsType content_type) {
-+  content_settings::WebsiteSettingsRegistry* website_settings =
-+      content_settings::WebsiteSettingsRegistry::GetInstance();
-+  for (const content_settings::WebsiteSettingsInfo* info : *website_settings) {
-+      if (info->type() == content_type && info->is_renderer_content_setting()) {
-+        return true;
-+      }
+-  return content_type == ContentSettingsType::IMAGES ||
+-         content_type == ContentSettingsType::JAVASCRIPT ||
+-         content_type == ContentSettingsType::POPUPS ||
+-         content_type == ContentSettingsType::MIXEDSCRIPT ||
+-         content_type == ContentSettingsType::AUTO_DARK_WEB_CONTENT;
++  switch (content_type) {
++    case ContentSettingsType::AUTOPLAY:
++    case ContentSettingsType::IMAGES:
++    case ContentSettingsType::JAVASCRIPT:
++    case ContentSettingsType::JAVASCRIPT_JIT:
++    case ContentSettingsType::MIXEDSCRIPT:
++    case ContentSettingsType::POPUPS:
++    case ContentSettingsType::TIMEZONE_OVERRIDE:
++    case ContentSettingsType::VIEWPORT:
++    case ContentSettingsType::WEBGL:
++    case ContentSettingsType::WEBRTC:
++    case ContentSettingsType::AUTO_DARK_WEB_CONTENT:
++      return true;
++    default:
++      return false;
 +  }
-   return content_type == ContentSettingsType::IMAGES ||
-          content_type == ContentSettingsType::JAVASCRIPT ||
-          content_type == ContentSettingsType::POPUPS ||
+ }
 @@ -115,7 +123,10 @@ bool RendererContentSettingRules::IsRendererContentSetting(
  
  void RendererContentSettingRules::FilterRulesByOutermostMainFrameURL(
