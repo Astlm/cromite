@@ -2372,6 +2372,16 @@ diff --git a/chrome/browser/ui/android/edge_to_edge/java/src/org/chromium/chrome
 diff --git a/chrome/browser/ui/android/omnibox/java/src/org/chromium/chrome/browser/omnibox/DeferredIMEWindowInsetApplicationCallback.java b/chrome/browser/ui/android/omnibox/java/src/org/chromium/chrome/browser/omnibox/DeferredIMEWindowInsetApplicationCallback.java
 --- a/chrome/browser/ui/android/omnibox/java/src/org/chromium/chrome/browser/omnibox/DeferredIMEWindowInsetApplicationCallback.java
 +++ b/chrome/browser/ui/android/omnibox/java/src/org/chromium/chrome/browser/omnibox/DeferredIMEWindowInsetApplicationCallback.java
+@@ -22,6 +22,7 @@ import androidx.core.view.WindowInsetsAnimationCompat.BoundsCompat;
+ import androidx.core.view.WindowInsetsCompat;
+ 
+ import org.chromium.build.annotations.NullMarked;
+ import org.chromium.build.annotations.Nullable;
++import org.chromium.chrome.browser.flags.ChromeFeatureList;
+ import org.chromium.ui.base.WindowAndroid;
+ import org.chromium.ui.insets.InsetObserver;
+ import org.chromium.ui.insets.InsetObserver.WindowInsetsAnimationListener;
+ import org.chromium.ui.insets.InsetObserver.WindowInsetsConsumer;
 @@ -34,6 +34,7 @@ public class DeferredIMEWindowInsetApplicationCallback
      private static final int NO_DEFERRED_KEYBOARD_HEIGHT = -1;
      private int mDeferredKeyboardHeight = NO_DEFERRED_KEYBOARD_HEIGHT;
@@ -2405,6 +2415,23 @@ diff --git a/chrome/browser/ui/android/omnibox/java/src/org/chromium/chrome/brow
  
              // Since the ime insets are greater than 0, the keyboard is showing, but its height is
              // being suppressed in that this class deliberately wants to avoid application resizing.
+@@ -146,7 +153,15 @@ public class DeferredIMEWindowInsetApplicationCallback
+         }
+         // Keyboard going away or the change is not animated; apply immediately.
++        //
++        // When the toolbar is moved to the bottom, the UI needs the IME height updates while the
++        // show animation is in progress to keep the location bar moving in sync with the keyboard.
++        // Otherwise, the keyboard can temporarily cover the bottom toolbar until the animation
++        // ends.
+-        if (newKeyboardHeight < mKeyboardHeight || !mAnimationInProgress) {
++        if (newKeyboardHeight < mKeyboardHeight
++                || !mAnimationInProgress
++                || ChromeFeatureList.sMoveTopToolbarToBottom.isEnabled()) {
+             commitKeyboardHeight(newKeyboardHeight);
+         } else if (newKeyboardHeight > 0) {
+             // Animated keyboard show - defer application.
+             mDeferredKeyboardHeight = newKeyboardHeight;
+         }
 diff --git a/chrome/browser/ui/android/omnibox/java/src/org/chromium/chrome/browser/omnibox/LocationBarCoordinator.java b/chrome/browser/ui/android/omnibox/java/src/org/chromium/chrome/browser/omnibox/LocationBarCoordinator.java
 --- a/chrome/browser/ui/android/omnibox/java/src/org/chromium/chrome/browser/omnibox/LocationBarCoordinator.java
 +++ b/chrome/browser/ui/android/omnibox/java/src/org/chromium/chrome/browser/omnibox/LocationBarCoordinator.java
