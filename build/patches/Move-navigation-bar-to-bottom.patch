@@ -3284,6 +3284,53 @@ new file mode 100644
 +#endif
 +
 +#endif
+diff --git a/chrome/browser/ui/android/omnibox/java/src/org/chromium/chrome/browser/omnibox/suggestions/SuggestionListViewBinder.java b/chrome/browser/ui/android/omnibox/java/src/org/chromium/chrome/browser/omnibox/suggestions/SuggestionListViewBinder.java
+--- a/chrome/browser/ui/android/omnibox/java/src/org/chromium/chrome/browser/omnibox/suggestions/SuggestionListViewBinder.java
++++ b/chrome/browser/ui/android/omnibox/java/src/org/chromium/chrome/browser/omnibox/suggestions/SuggestionListViewBinder.java
+@@ -130,12 +130,7 @@ class SuggestionListViewBinder {
+                         model.get(SuggestionListProperties.COLOR_SCHEME));
+ 
+         holder.dropdown.setBackgroundColor(backgroundColor);
+-
+-        if (model.get(SuggestionListProperties.IS_LARGE_SCREEN)) {
+-            holder.container.setBackgroundColor(Color.TRANSPARENT);
+-        } else {
+-            holder.container.setBackgroundColor(backgroundColor);
+-        }
++        holder.container.setBackgroundColor(Color.TRANSPARENT);
+     }
+ 
+     private static void updateContainerVisibility(
+diff --git a/chrome/browser/ui/android/toolbar/java/src/org/chromium/chrome/browser/toolbar/top/ToolbarPhone.java b/chrome/browser/ui/android/toolbar/java/src/org/chromium/chrome/browser/toolbar/top/ToolbarPhone.java
+--- a/chrome/browser/ui/android/toolbar/java/src/org/chromium/chrome/browser/toolbar/top/ToolbarPhone.java
++++ b/chrome/browser/ui/android/toolbar/java/src/org/chromium/chrome/browser/toolbar/top/ToolbarPhone.java
+@@ -531,13 +531,7 @@ public class ToolbarPhone extends ToolbarLayout
+      */
+     private @ColorInt int getToolbarDefaultColor(boolean shouldUseFocusColor) {
+         if (urlHasFocus() || shouldUseFocusColor) {
+-            if (mDropdownListScrolled) {
+-                return isIncognitoBranded()
+-                        ? getContext().getColor(R.color.omnibox_scrolled_bg_incognito)
+-                        : ContextCompat.getColor(getContext(), R.color.toolbar_text_box_bg_color);
+-            }
+-            return OmniboxResourceProvider.getSuggestionsDropdownBackgroundColor(
+-                    getContext(), mThemeColorProvider.getBrandedColorScheme());
++            return Color.TRANSPARENT;
+         }
+         return ChromeColors.getDefaultThemeColor(getContext(), isIncognitoBranded());
+     }
+@@ -554,10 +548,7 @@ public class ToolbarPhone extends ToolbarLayout
+     private @ColorInt int getLocationBarDefaultColorForToolbarColor(
+             @ColorInt int toolbarColor, boolean shouldUseFocusColor) {
+         if (urlHasFocus() || shouldUseFocusColor) {
+-
+-            // Omnibox has same background as the Omnibox suggestion.
+-            return OmniboxResourceProvider.getStandardSuggestionBackgroundColor(
+-                    getContext(), mThemeColorProvider.getBrandedColorScheme());
++            return Color.TRANSPARENT;
+         }
+         return getLocationBarColorForToolbarColor(toolbarColor);
+     }
 diff --git a/third_party/blink/renderer/core/frame/viewport_data.cc b/third_party/blink/renderer/core/frame/viewport_data.cc
 --- a/third_party/blink/renderer/core/frame/viewport_data.cc
 +++ b/third_party/blink/renderer/core/frame/viewport_data.cc
