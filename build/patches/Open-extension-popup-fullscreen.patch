@@ -280,10 +280,11 @@ diff --git a/chrome/browser/ui/android/toolbar/java/src/org/chromium/chrome/brow
  import android.graphics.Rect;
 @@ -18,12 +19,18 @@ import org.chromium.build.annotations.Nullable;
  import org.chromium.chrome.browser.extensions.ContextMenuSource;
+import org.chromium.chrome.browser.flags.ChromeFeatureList;
  import org.chromium.chrome.browser.profiles.Profile;
  import org.chromium.chrome.browser.tab.Tab;
+import org.chromium.chrome.browser.toolbar.ToolbarPositionController;
  import org.chromium.chrome.browser.toolbar.extensions.ExtensionActionListCoordinator;
-+import org.chromium.chrome.browser.toolbar.settings.AddressBarPreference;
 +import org.chromium.chrome.browser.ui.browser_window.ChromeAndroidTask;
  import org.chromium.chrome.browser.ui.extensions.ExtensionAction;
  import org.chromium.chrome.browser.ui.extensions.ExtensionActionContextMenuBridge;
@@ -417,7 +418,9 @@ diff --git a/chrome/browser/ui/android/toolbar/java/src/org/chromium/chrome/brow
 +            return;
 +        }
 +
-+        boolean showToolbarOnTop = AddressBarPreference.isToolbarConfiguredToShowOnTop();
++        boolean showToolbarOnTop =
++                !ChromeFeatureList.sMoveTopToolbarToBottom.isEnabled()
++                        && ToolbarPositionController.shouldShowToolbarOnTop(currentTab);
 +
 +        int tabId = currentTab.getId();
 +        String title = "";
@@ -728,6 +731,53 @@ diff --git a/chrome/browser/ui/android/extensions/java/src/org/chromium/chrome/b
 +                int tabId,
 +                boolean enableAutoResize);
 
+diff --git a/chrome/browser/extensions/extension_view_host.h b/chrome/browser/extensions/extension_view_host.h
+--- a/chrome/browser/extensions/extension_view_host.h
++++ b/chrome/browser/extensions/extension_view_host.h
+@@ -79,6 +79,8 @@ class ExtensionViewHost
+   void set_view(ExtensionView* view) { view_ = view; }
+   ExtensionView* view() { return view_; }
+ 
++  void SetAllowPinchZoom(bool allow_pinch_zoom);
++
+   // ExtensionHost
+   void OnDidStopFirstLoad() override;
+   void LoadInitialURL() override;
+@@ -136,6 +138,8 @@ class ExtensionViewHost
+ 
+   std::unique_ptr<Delegate> delegate_;
+ 
++  bool allow_pinch_zoom_ = false;
++
+   // View that shows the rendered content in the UI.
+   raw_ptr<ExtensionView, DanglingUntriaged> view_ = nullptr;
+ 
+diff --git a/chrome/browser/extensions/extension_view_host.cc b/chrome/browser/extensions/extension_view_host.cc
+--- a/chrome/browser/extensions/extension_view_host.cc
++++ b/chrome/browser/extensions/extension_view_host.cc
+@@ -44,6 +44,10 @@ ExtensionViewHost::ExtensionViewHost(
+   autofill::ChromeAutofillClient::CreateForWebContents(host_contents());
+ }
+ 
+ ExtensionViewHost::~ExtensionViewHost() = default;
+ 
++void ExtensionViewHost::SetAllowPinchZoom(bool allow_pinch_zoom) {
++  allow_pinch_zoom_ = allow_pinch_zoom;
++}
++
+ bool ExtensionViewHost::UnhandledKeyboardEvent(
+     content::WebContents* source,
+     const input::NativeWebKeyboardEvent& event) {
+@@ -152,7 +156,9 @@ bool ExtensionViewHost::PreHandleGestureEvent(
+     content::WebContents* source,
+     const blink::WebGestureEvent& event) {
+-  // Disable pinch zooming.
+-  return blink::WebInputEvent::IsPinchGestureEventType(event.GetType());
++  // Disable pinch zooming by default, unless explicitly enabled by the host.
++  return !allow_pinch_zoom_ &&
++         blink::WebInputEvent::IsPinchGestureEventType(event.GetType());
+ }
+
 diff --git a/chrome/browser/ui/android/extensions/extension_action_popup_contents.h b/chrome/browser/ui/android/extensions/extension_action_popup_contents.h
 --- a/chrome/browser/ui/android/extensions/extension_action_popup_contents.h
 +++ b/chrome/browser/ui/android/extensions/extension_action_popup_contents.h
@@ -763,6 +813,13 @@ diff --git a/chrome/browser/ui/android/extensions/extension_action_popup_content
    java_object_ = Java_ExtensionActionPopupContents_Constructor(
        AttachCurrentThread(), reinterpret_cast<jlong>(this),
        host_->host_contents());
+@@ -43,6 +44,7 @@ ExtensionActionPopupContents::ExtensionActionPopupContents(
+   java_object_ = Java_ExtensionActionPopupContents_Constructor(
+       AttachCurrentThread(), reinterpret_cast<jlong>(this),
+       host_->host_contents());
+   host_->set_view(this);
++  host_->SetAllowPinchZoom(!enable_auto_resize_);
+   // Handle the containing view calling window.close();
 @@ -119,7 +120,11 @@ void ExtensionActionPopupContents::LoadInitialPage(JNIEnv* env) {
  
  void ExtensionActionPopupContents::SetUpNewMainFrame(
