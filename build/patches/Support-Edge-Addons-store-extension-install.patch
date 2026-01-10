@@ -9,6 +9,9 @@ This follows Kiwi Browser's approach: inject JavaScript on Edge Add-ons pages
 to spoof an Edge-like UA and replace the "Get" button with a direct CRX3
 download link.
 
+Also allow "Request desktop site" by default for the Edge Add-ons domain to
+ensure the desktop store UI is consistently used.
+
 License: GPL-2.0-or-later - https://spdx.org/licenses/GPL-2.0-or-later.html
 FILE:Support-Edge-Addons-store-extension-install.patch
 ---
@@ -161,5 +164,18 @@ diff --git a/chrome/android/java/src/org/chromium/chrome/browser/app/ChromeActiv
 +                    }
                  };
      }
+diff --git a/components/content_settings/core/browser/host_content_settings_map.cc b/components/content_settings/core/browser/host_content_settings_map.cc
+--- a/components/content_settings/core/browser/host_content_settings_map.cc
++++ b/components/content_settings/core/browser/host_content_settings_map.cc
+@@ -332,6 +332,9 @@ HostContentSettingsMap::HostContentSettingsMap(PrefService* prefs,
+   SetContentSettingDefaultScope(
+     GURL("https://chromewebstore.google.com"), GURL(),
+     ContentSettingsType::REQUEST_DESKTOP_SITE, CONTENT_SETTING_ALLOW);
++  SetContentSettingDefaultScope(
++    GURL("https://microsoftedge.microsoft.com"), GURL(),
++    ContentSettingsType::REQUEST_DESKTOP_SITE, CONTENT_SETTING_ALLOW);
+ #endif
+ 
+   const auto* registry =
 -- 
 2.47.3
