@@ -134,8 +134,10 @@ new file mode 100644
 +import org.chromium.components.thinwebview.ThinWebView;
 +import org.chromium.components.thinwebview.ThinWebViewConstraints;
 +import org.chromium.components.thinwebview.ThinWebViewFactory;
++import org.chromium.content_public.browser.GestureListenerManager;
 +import org.chromium.content_public.browser.WebContents;
 +import org.chromium.ui.base.ViewAndroidDelegate;
++import org.chromium.ui.base.ViewUtils;
 +import org.chromium.ui.base.WindowAndroid;
 +
 +/** Displays an extension action popup page as a fullscreen dialog, while keeping tab context. */
@@ -143,6 +145,7 @@ new file mode 100644
 +class ExtensionActionFullscreenPopup implements Destroyable {
 +    private final String mActionId;
 +    private final String mTitle;
++    private final boolean mShowToolbarOnTop;
 +    private final ExtensionActionPopupContents mContents;
 +    private final ThinWebView mThinWebView;
 +    private final ChromeDialog mDialog;
@@ -154,9 +157,11 @@ new file mode 100644
 +            WindowAndroid windowAndroid,
 +            String actionId,
 +            String title,
++            boolean showToolbarOnTop,
 +            ExtensionActionPopupContents contents) {
 +        mActionId = actionId;
 +        mTitle = title;
++        mShowToolbarOnTop = showToolbarOnTop;
 +        mContents = contents;
 +
 +        WebContents webContents = contents.getWebContents();
@@ -177,12 +182,21 @@ new file mode 100644
 +                        NullUtil.assumeNonNull(windowAndroid.getIntentRequestTracker()));
 +        mThinWebView.attachWebContents(webContents, contentView, null);
 +
++        GestureListenerManager gestureListenerManager =
++                GestureListenerManager.fromWebContents(webContents);
++        if (gestureListenerManager != null) {
++            gestureListenerManager.updateMultiTouchZoomSupport(true);
++            gestureListenerManager.updateDoubleTapSupport(true);
++        }
++
 +        mDialog =
 +                new ChromeDialog(
 +                        activity,
 +                        org.chromium.components.browser_ui.widget.R.style
 +                                .ThemeOverlay_BrowserUI_Fullscreen,
 +                        EdgeToEdgeUtils.isEdgeToEdgeEverywhereEnabled());
++
++        int toolbarHeightPx = ViewUtils.dpToPx(activity, 48);
 +
 +        Toolbar toolbar = new Toolbar(activity);
 +        toolbar.setTitle(mTitle);
@@ -198,16 +212,17 @@ new file mode 100644
 +
 +        LinearLayout container = new LinearLayout(activity);
 +        container.setOrientation(LinearLayout.VERTICAL);
-+        container.addView(
-+                toolbar,
-+                new LinearLayout.LayoutParams(
-+                        ViewGroup.LayoutParams.MATCH_PARENT,
-+                        ViewGroup.LayoutParams.WRAP_CONTENT));
-+        container.addView(
-+                webContentsContainer,
-+                new LinearLayout.LayoutParams(
-+                        ViewGroup.LayoutParams.MATCH_PARENT,
-+                        ViewGroup.LayoutParams.MATCH_PARENT));
++        LinearLayout.LayoutParams toolbarLayoutParams =
++                new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, toolbarHeightPx);
++        LinearLayout.LayoutParams webContentsLayoutParams =
++                new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1.0f);
++        if (mShowToolbarOnTop) {
++            container.addView(toolbar, toolbarLayoutParams);
++            container.addView(webContentsContainer, webContentsLayoutParams);
++        } else {
++            container.addView(webContentsContainer, webContentsLayoutParams);
++            container.addView(toolbar, toolbarLayoutParams);
++        }
 +
 +        mDialog.setContentView(container);
 +        mDialog.setOnDismissListener((ignored) -> destroy());
@@ -268,6 +283,7 @@ diff --git a/chrome/browser/ui/android/toolbar/java/src/org/chromium/chrome/brow
  import org.chromium.chrome.browser.profiles.Profile;
  import org.chromium.chrome.browser.tab.Tab;
  import org.chromium.chrome.browser.toolbar.extensions.ExtensionActionListCoordinator;
++import org.chromium.chrome.browser.toolbar.settings.AddressBarPreference;
 +import org.chromium.chrome.browser.ui.browser_window.ChromeAndroidTask;
  import org.chromium.chrome.browser.ui.extensions.ExtensionAction;
  import org.chromium.chrome.browser.ui.extensions.ExtensionActionContextMenuBridge;
@@ -395,10 +411,13 @@ diff --git a/chrome/browser/ui/android/toolbar/java/src/org/chromium/chrome/brow
 +        }
 +
 +        ExtensionActionPopupContents contents =
-+                ExtensionActionPopupContents.create(task, actionId, currentTab.getId());
++                ExtensionActionPopupContents.create(
++                        task, actionId, currentTab.getId(), /*enableAutoResize=*/false);
 +        if (contents == null) {
 +            return;
 +        }
++
++        boolean showToolbarOnTop = AddressBarPreference.isToolbarConfiguredToShowOnTop();
 +
 +        int tabId = currentTab.getId();
 +        String title = "";
@@ -409,7 +428,12 @@ diff --git a/chrome/browser/ui/android/toolbar/java/src/org/chromium/chrome/brow
 +
 +        mCurrentFullscreenPopup =
 +                new ExtensionActionFullscreenPopup(
-+                        (Activity) tabContext, windowAndroid, actionId, title, contents);
++                        (Activity) tabContext,
++                        windowAndroid,
++                        actionId,
++                        title,
++                        showToolbarOnTop,
++                        contents);
 +        mCurrentFullscreenPopup.show();
 +        mCurrentFullscreenPopup.loadInitialPage();
 +    }
@@ -679,6 +703,92 @@ diff --git a/chrome/browser/ui/android/extensions/javatests/src/org/chromium/chr
          @Override
          public boolean extensionsEnabled(long nativeExtensionActionsBridge) {
              return getProfileModelOrThrow(nativeExtensionActionsBridge).isEnabled();
+diff --git a/chrome/browser/ui/android/extensions/java/src/org/chromium/chrome/browser/ui/extensions/ExtensionActionPopupContents.java b/chrome/browser/ui/android/extensions/java/src/org/chromium/chrome/browser/ui/extensions/ExtensionActionPopupContents.java
+--- a/chrome/browser/ui/android/extensions/java/src/org/chromium/chrome/browser/ui/extensions/ExtensionActionPopupContents.java
++++ b/chrome/browser/ui/android/extensions/java/src/org/chromium/chrome/browser/ui/extensions/ExtensionActionPopupContents.java
+@@ -52,8 +52,14 @@
+     /** Creates an {@link ExtensionActionPopupContents} instance. */
+     public static ExtensionActionPopupContents create(
+             ChromeAndroidTask task, String actionId, int tabId) {
+         return create(task, actionId, tabId, /*enableAutoResize=*/true);
+     }
+
+     /** Creates an {@link ExtensionActionPopupContents} instance. */
+     public static ExtensionActionPopupContents create(
+             ChromeAndroidTask task, String actionId, int tabId, boolean enableAutoResize) {
+         return ExtensionActionPopupContentsJni.get()
+-                .create(task.getOrCreateNativeBrowserWindowPtr(), actionId, tabId);
++                .create(task.getOrCreateNativeBrowserWindowPtr(), actionId, tabId, enableAutoResize);
+     }
+@@ -146,7 +152,10 @@
+         ExtensionActionPopupContents create(
+-                long androidBrowserWindowPtr, @JniType("std::string") String actionId, int tabId);
++                long androidBrowserWindowPtr,
++                @JniType("std::string") String actionId,
++                int tabId,
++                boolean enableAutoResize);
+
+diff --git a/chrome/browser/ui/android/extensions/extension_action_popup_contents.h b/chrome/browser/ui/android/extensions/extension_action_popup_contents.h
+--- a/chrome/browser/ui/android/extensions/extension_action_popup_contents.h
++++ b/chrome/browser/ui/android/extensions/extension_action_popup_contents.h
+@@ -37,7 +37,8 @@ class ExtensionActionPopupContents : public content::WebContentsObserver,
+                                      public ExtensionView {
+  public:
+   explicit ExtensionActionPopupContents(
+-      std::unique_ptr<ExtensionViewHost> popup_host);
++      std::unique_ptr<ExtensionViewHost> popup_host,
++      bool enable_auto_resize);
+   ExtensionActionPopupContents(const ExtensionActionPopupContents&) = delete;
+   ExtensionActionPopupContents& operator=(const ExtensionActionPopupContents&) =
+       delete;
+@@ -71,6 +72,7 @@ class ExtensionActionPopupContents : public content::WebContentsObserver,
+ 
+   std::unique_ptr<ExtensionViewHost> host_;
+   base::android::ScopedJavaGlobalRef<jobject> java_object_;
++  const bool enable_auto_resize_;
+ };
+
+diff --git a/chrome/browser/ui/android/extensions/extension_action_popup_contents.cc b/chrome/browser/ui/android/extensions/extension_action_popup_contents.cc
+--- a/chrome/browser/ui/android/extensions/extension_action_popup_contents.cc
++++ b/chrome/browser/ui/android/extensions/extension_action_popup_contents.cc
+@@ -35,8 +35,9 @@ constexpr gfx::Size kMaxSize = {800, 600};
+ }  // namespace
+ 
+ ExtensionActionPopupContents::ExtensionActionPopupContents(
+-    std::unique_ptr<ExtensionViewHost> host)
+-    : host_(std::move(host)) {
++    std::unique_ptr<ExtensionViewHost> host,
++    bool enable_auto_resize)
++    : host_(std::move(host)), enable_auto_resize_(enable_auto_resize) {
+   java_object_ = Java_ExtensionActionPopupContents_Constructor(
+       AttachCurrentThread(), reinterpret_cast<jlong>(this),
+       host_->host_contents());
+@@ -119,7 +120,11 @@ void ExtensionActionPopupContents::LoadInitialPage(JNIEnv* env) {
+ 
+ void ExtensionActionPopupContents::SetUpNewMainFrame(
+     RenderFrameHost* render_frame_host) {
+-  render_frame_host->GetView()->EnableAutoResize(kMinSize, kMaxSize);
++  if (enable_auto_resize_) {
++    render_frame_host->GetView()->EnableAutoResize(kMinSize, kMaxSize);
++  } else {
++    render_frame_host->GetView()->DisableAutoResize(gfx::Size());
++  }
+ }
+@@ -138,7 +143,8 @@
+ static ScopedJavaLocalRef<jobject> JNI_ExtensionActionPopupContents_Create(
+     JNIEnv* env,
+     jlong browser_window_interface_ptr,
+     std::string& action_id,
+-    int tab_id) {
++    int tab_id,
++    jboolean enable_auto_resize) {
+@@ -170,7 +176,7 @@
+   ExtensionActionPopupContents* popup =
+-      new ExtensionActionPopupContents(std::move(host));
++      new ExtensionActionPopupContents(std::move(host), enable_auto_resize);
+   return popup->GetJavaObject();
+ }
+
 diff --git a/chrome/app/generated_resources.grd b/chrome/app/generated_resources.grd
 --- a/chrome/app/generated_resources.grd
 +++ b/chrome/app/generated_resources.grd
