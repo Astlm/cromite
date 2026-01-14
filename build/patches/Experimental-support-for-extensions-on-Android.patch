@@ -3268,32 +3268,102 @@ index 46c329f4a7..db5001bfb5 100644
    // TODO(https://crbug.com/356905053): On Android, the startup and
    // initialization flow is different.
    // ExtensionsAPIClient is instantiated as part of the ExtensionsBrowserClient,
-diff --git a/extensions/browser/extension_frame_host.cc b/extensions/browser/extension_frame_host.cc
-index 8e2a615b34..ef4b02b01f 100644
---- a/extensions/browser/extension_frame_host.cc
-+++ b/extensions/browser/extension_frame_host.cc
-@@ -157,6 +157,10 @@ void ExtensionFrameHost::OpenChannelToExtension(
-   TRACE_EVENT("extensions", "ExtensionFrameHost::OpenChannelToExtension",
-               ChromeTrackEvent::kRenderProcessHost, *process);
+diff --git a/extensions/browser/api/messaging/message_service.cc b/extensions/browser/api/messaging/message_service.cc
+index 93ff1b0ae0..83cd8f52aa 100644
+--- a/extensions/browser/api/messaging/message_service.cc
++++ b/extensions/browser/api/messaging/message_service.cc
+@@ -18,6 +18,7 @@
+ #include "base/functional/callback.h"
+ #include "base/json/json_writer.h"
+ #include "base/lazy_instance.h"
++#include "base/no_destructor.h"
+ #include "base/values.h"
+ #include "build/build_config.h"
+ #include "components/back_forward_cache/back_forward_cache_disable.h"
+@@ -318,20 +319,22 @@ MessageService::~MessageService() {
+ }
  
-+  if (!MessageServiceApi::GetMessageService()) {
-+    LOG(INFO) << "--No MessageServiceApi";
-+    return;
+ class MessageServiceFactory
+-    : public BrowserContextKeyedAPIFactory<MessageService>,
+-      public MessageServiceApi {
++    : public BrowserContextKeyedAPIFactory<MessageService> {
+  public:
+   MessageServiceFactory() {
+     DependsOn(ProcessManagerFactory::GetInstance());
+     DependsOn(ExtensionPrefsFactory::GetInstance());
+     DependsOn(ExtensionRegistryFactory::GetInstance());
+-
+-    MessageServiceApi::SetMessageService(this);
+-  }
+-  ~MessageServiceFactory() override {
+-    MessageServiceApi::SetMessageService(nullptr);
+   }
+ 
++  ~MessageServiceFactory() override = default;
++};
++
++class MessageServiceApiImpl final : public MessageServiceApi {
++ public:
++  MessageServiceApiImpl() { MessageServiceApi::SetMessageService(this); }
++  ~MessageServiceApiImpl() override = default;
++
+   void OpenChannelToExtension(
+       content::BrowserContext* context,
+       Source source,
+@@ -379,8 +382,8 @@ class MessageServiceFactory
+   }
+ 
+  private:
+-  ChannelEndpoint GetEndpoint(content::BrowserContext* context,
+-                              const Source& source) {
++  static ChannelEndpoint GetEndpoint(content::BrowserContext* context,
++                                     const Source& source) {
+     return std::visit(
+         absl::Overload{
+             [&](const WorkerId& worker) {
+@@ -399,6 +402,11 @@ class MessageServiceFactory
+   }
+ };
+ 
++// Ensure MessageServiceApi is always available, even if browser context keyed
++// factories haven't been built yet.
++[[maybe_unused]] base::NoDestructor<MessageServiceApiImpl>
++    g_message_service_api_impl;
++
+ static base::LazyInstance<MessageServiceFactory>::DestructorAtExit g_factory =
+     LAZY_INSTANCE_INITIALIZER;
+ 
+diff --git a/extensions/common/user_scripts_availability.cc b/extensions/common/user_scripts_availability.cc
+index 269e4a3ee9..a3508c7032 100644
+--- a/extensions/common/user_scripts_availability.cc
++++ b/extensions/common/user_scripts_availability.cc
+@@ -14,6 +14,7 @@
+ #include "extensions/common/extension.h"
+ #include "extensions/common/extension_features.h"
+ #include "extensions/common/features/feature.h"
++#include "extensions/common/features/feature_developer_mode_only.h"
+ #include "extensions/common/mojom/context_type.mojom.h"
+ #include "extensions/common/user_scripts_allowed_state.h"
+ #include "url/gurl.h"
+@@ -54,8 +55,16 @@ bool AreUserScriptsFeaturesAvailable(
+     return false;
+   }
+ 
+-  return GetCurrentUserScriptAllowedState(context_id, extension->id())
+-      .value_or(false);
++  std::optional<bool> allowed_state =
++      GetCurrentUserScriptAllowedState(context_id, extension->id());
++  if (allowed_state.has_value()) {
++    return *allowed_state;
 +  }
-   MessageServiceApi::GetMessageService()->OpenChannelToExtension(
-       render_frame_host->GetBrowserContext(), render_frame_host, port_id, *info,
-       channel_type, channel_name, std::move(port), std::move(port_host));
-@@ -189,6 +193,10 @@ void ExtensionFrameHost::OpenChannelToTab(
-     mojo::PendingAssociatedRemote<extensions::mojom::MessagePort> port,
-     mojo::PendingAssociatedReceiver<extensions::mojom::MessagePortHost>
-         port_host) {
-+  if (!MessageServiceApi::GetMessageService()) {
-+    LOG(INFO) << "--No MessageServiceApi";
-+    return;
-+  }
-   content::RenderFrameHost* render_frame_host =
-       receivers_.GetCurrentTargetFrame();
-   auto* process = render_frame_host->GetProcess();
++
++  // If the allow state hasn't been seeded yet, fall back to the legacy
++  // developer-mode gate rather than permanently hiding the API due to an
++  // initialization race.
++  return check_developer_mode && GetCurrentDeveloperMode(context_id);
+ }
+ 
+ }  // namespace
 diff --git a/extensions/browser/extension_host.cc b/extensions/browser/extension_host.cc
 index 8f381dbe67..85a9309eca 100644
 --- a/extensions/browser/extension_host.cc
