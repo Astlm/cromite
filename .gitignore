@@ -5,3 +5,7 @@
 /.vs
 /temp
 AGENTS.md
+
+# Secrets / local signing material
+*.jks
+*.keystore

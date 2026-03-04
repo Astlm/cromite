@@ -1,0 +1,22 @@
+From fd9d940e588511769baa3710e5aec41e0f37de80 Mon Sep 17 00:00:00 2001
+From: Your Name <you@example.com>
+Date: Wed, 4 Mar 2026 19:31:28 +0800
+Subject: [PATCH] Fix missing namespace close in user scripts prefs
+
+---
+ components/user_scripts/browser/user_script_prefs.cc | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/components/user_scripts/browser/user_script_prefs.cc b/components/user_scripts/browser/user_script_prefs.cc
+index a077f589cd..d9ed5402e9 100644
+--- a/components/user_scripts/browser/user_script_prefs.cc
++++ b/components/user_scripts/browser/user_script_prefs.cc
+@@ -273,3 +273,5 @@ void UserScriptsPrefs::SetScriptEnabled(const std::string& script_id, bool is_en
+   if (force_disabled) is_enabled = false;
+   script_dict->SetBoolean(kScriptIsEnabled, is_enabled);
+ }
++
++}  // namespace user_scripts
+-- 
+2.43.0
+

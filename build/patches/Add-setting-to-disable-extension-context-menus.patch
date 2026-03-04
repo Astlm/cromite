@@ -1,0 +1,149 @@
+From 366ea39e4ee873f5bc5ef103319e23e07ee741f2 Mon Sep 17 00:00:00 2001
+From: Your Name <you@example.com>
+Date: Wed, 4 Mar 2026 19:13:34 +0800
+Subject: [PATCH] Add setting to disable extension context menus
+
+Add an accessibility toggle to hide extension-provided chrome.contextMenus items from the Android page context menu. This helps reduce accidental activation of extension items on touch devices.
+
+License: GPL-2.0-or-later - https://spdx.org/licenses/GPL-2.0-or-later.html
+FILE:Add-setting-to-disable-extension-context-menus.patch
+---
+ .../ChromeContextMenuPopulator.java            | 11 +++++++++--
+ .../preferences/ChromePreferenceKeys.java      |  5 +++++
+ .../android/strings/android_chrome_strings.grd |  6 ++++++
+ .../java/res/xml/accessibility_preferences.xml |  6 ++++++
+ .../accessibility/AccessibilitySettings.java   | 18 ++++++++++++++++++
+ 5 files changed, 44 insertions(+), 2 deletions(-)
+
+diff --git a/chrome/android/java/src/org/chromium/chrome/browser/contextmenu/ChromeContextMenuPopulator.java b/chrome/android/java/src/org/chromium/chrome/browser/contextmenu/ChromeContextMenuPopulator.java
+index 6f1f49bd04..108b79cee7 100644
+--- a/chrome/android/java/src/org/chromium/chrome/browser/contextmenu/ChromeContextMenuPopulator.java
++++ b/chrome/android/java/src/org/chromium/chrome/browser/contextmenu/ChromeContextMenuPopulator.java
+@@ -737,8 +737,15 @@ public class ChromeContextMenuPopulator implements ContextMenuPopulator {
+             groupedItems.add(developerGroup);
+         }
+ 
+-        ModelList modelList = mParams.getMenuModelBridge().populateModelList();
+-        if (!modelList.isEmpty()) groupedItems.add(modelList);
++        boolean disableExtensionContextMenus =
++                ChromeSharedPreferences.getInstance()
++                        .readBoolean(
++                                ChromePreferenceKeys.ACCESSIBILITY_DISABLE_EXTENSION_CONTEXT_MENUS,
++                                false);
++        if (!disableExtensionContextMenus) {
++            ModelList modelList = mParams.getMenuModelBridge().populateModelList();
++            if (!modelList.isEmpty()) groupedItems.add(modelList);
++        }
+ 
+         return groupedItems;
+     }
+diff --git a/chrome/browser/preferences/android/java/src/org/chromium/chrome/browser/preferences/ChromePreferenceKeys.java b/chrome/browser/preferences/android/java/src/org/chromium/chrome/browser/preferences/ChromePreferenceKeys.java
+index efbe52486d..708895eb4d 100644
+--- a/chrome/browser/preferences/android/java/src/org/chromium/chrome/browser/preferences/ChromePreferenceKeys.java
++++ b/chrome/browser/preferences/android/java/src/org/chromium/chrome/browser/preferences/ChromePreferenceKeys.java
+@@ -44,6 +44,10 @@ import java.util.List;
+ @NullMarked
+ public final class ChromePreferenceKeys {
+ 
++    /** Whether extension-provided context menu items are hidden on Android. */
++    public static final String ACCESSIBILITY_DISABLE_EXTENSION_CONTEXT_MENUS =
++            "Chrome.Accessibility.DisableExtensionContextMenus";
++
+     /** Whether the current adaptive toolbar customization is enabled. */
+     public static final String ADAPTIVE_TOOLBAR_CUSTOMIZATION_ENABLED =
+             "Chrome.AdaptiveToolbarCustomization.Enabled";
+@@ -1079,6 +1083,7 @@ public final class ChromePreferenceKeys {
+     @CheckDiscard("Validation is performed in tests and in debug builds.")
+     static List<String> getKeysInUse() {
+         return Arrays.asList(
++                ACCESSIBILITY_DISABLE_EXTENSION_CONTEXT_MENUS,
+                 ADAPTIVE_TOOLBAR_CUSTOMIZATION_ENABLED,
+                 ADAPTIVE_TOOLBAR_CUSTOMIZATION_SETTINGS,
+                 ADDRESS_BAR_SETTINGS_CLICKED,
+diff --git a/chrome/browser/ui/android/strings/android_chrome_strings.grd b/chrome/browser/ui/android/strings/android_chrome_strings.grd
+index fcffb369e2..c51f22c4f4 100644
+--- a/chrome/browser/ui/android/strings/android_chrome_strings.grd
++++ b/chrome/browser/ui/android/strings/android_chrome_strings.grd
+@@ -1555,6 +1555,12 @@ Your Google account may have other forms of browsing history like searches and a
+       <message name="IDS_ALWAYS_SHOW_CONTEXTMENU_ON_LINKS_SUMMARY" desc="Summary of the preference that open the context menu in links.">
+         Allows the context menu to be opened with a tap and follow the link with long press
+       </message>
++      <message name="IDS_DISABLE_EXTENSION_CONTEXT_MENUS_TITLE" desc="Title of the accessibility preference that disables extension-provided context menu items.">
++        Disable extension context menu items
++      </message>
++      <message name="IDS_DISABLE_EXTENSION_CONTEXT_MENUS_SUMMARY" desc="Summary of the accessibility preference that disables extension-provided context menu items.">
++        Prevent extensions from adding items to the page context menu
++      </message>
+ 
+       <!-- Safety check -->
+       <message name="IDS_PREFS_SAFETY_CHECK" desc="Title of the Safety check element in settings, allowing the user to check multiple areas of browser safety. [CHAR_LIMIT=32]">
+diff --git a/components/browser_ui/accessibility/android/java/res/xml/accessibility_preferences.xml b/components/browser_ui/accessibility/android/java/res/xml/accessibility_preferences.xml
+index 37e9909b77..1e2b2f2b50 100644
+--- a/components/browser_ui/accessibility/android/java/res/xml/accessibility_preferences.xml
++++ b/components/browser_ui/accessibility/android/java/res/xml/accessibility_preferences.xml
+@@ -37,6 +37,12 @@ found in the LICENSE file.
+         android:summary="@string/always_show_contextmenu_on_links_summary"
+         android:title="@string/always_show_contextmenu_on_links_title" />
+ 
++    <org.chromium.components.browser_ui.settings.ChromeSwitchPreference
++        android:key="disable_extension_context_menus"
++        android:defaultValue="false"
++        android:summary="@string/disable_extension_context_menus_summary"
++        android:title="@string/disable_extension_context_menus_title" />
++
+     <org.chromium.components.browser_ui.settings.ChromeSwitchPreference
+         android:key="force_enable_zoom"
+         android:summary="@string/force_enable_zoom_summary"
+diff --git a/components/browser_ui/accessibility/android/java/src/org/chromium/components/browser_ui/accessibility/AccessibilitySettings.java b/components/browser_ui/accessibility/android/java/src/org/chromium/components/browser_ui/accessibility/AccessibilitySettings.java
+index 8d32423f8d..b579aabc6e 100644
+--- a/components/browser_ui/accessibility/android/java/src/org/chromium/components/browser_ui/accessibility/AccessibilitySettings.java
++++ b/components/browser_ui/accessibility/android/java/src/org/chromium/components/browser_ui/accessibility/AccessibilitySettings.java
+@@ -29,6 +29,8 @@ import org.chromium.content_public.browser.ContentFeatureList;
+ import org.chromium.content_public.browser.ContentFeatureMap;
+ 
+ import org.chromium.chrome.browser.settings.ChromeBaseSettingsFragment;
++import org.chromium.chrome.browser.preferences.ChromePreferenceKeys;
++import org.chromium.chrome.browser.preferences.ChromeSharedPreferences;
+ import org.chromium.components.browser_ui.accessibility.AccessibilitySettingsDelegate.BooleanPreferenceDelegate;
+ 
+ /** Fragment to keep track of all the accessibility related preferences. */
+@@ -59,6 +61,8 @@ public class AccessibilitySettings extends ChromeBaseSettingsFragment
+     static final String PREF_ALWAYS_SHOW_CONTEXTMENU_ON_LINKS = "always_show_contextmenu_on_links";
+     private BooleanPreferenceDelegate mShowAlwaysContextMenuOnLinksDelegate;
+ 
++    static final String PREF_DISABLE_EXTENSION_CONTEXT_MENUS = "disable_extension_context_menus";
++
+     private PageZoomPreference mPageZoomDefaultZoomPref;
+     private ChromeSwitchPreference mPageZoomIncludeOSAdjustment;
+     private ChromeSwitchPreference mPageZoomAlwaysShowPref;
+@@ -161,6 +165,15 @@ public class AccessibilitySettings extends ChromeBaseSettingsFragment
+         mShowAlwaysContextMenuOnLinksPref.setChecked(mShowAlwaysContextMenuOnLinksDelegate.getValue());
+         mShowAlwaysContextMenuOnLinksPref.setOnPreferenceChangeListener(this);
+ 
++        ChromeSwitchPreference disableExtensionContextMenusPref =
++                (ChromeSwitchPreference) findPreference(PREF_DISABLE_EXTENSION_CONTEXT_MENUS);
++        disableExtensionContextMenusPref.setChecked(
++                ChromeSharedPreferences.getInstance()
++                        .readBoolean(
++                                ChromePreferenceKeys.ACCESSIBILITY_DISABLE_EXTENSION_CONTEXT_MENUS,
++                                false));
++        disableExtensionContextMenusPref.setOnPreferenceChangeListener(this);
++
+         Preference captions = findPreference(PREF_CAPTIONS);
+         captions.setOnPreferenceClickListener(
+                 preference -> {
+@@ -267,6 +280,11 @@ public class AccessibilitySettings extends ChromeBaseSettingsFragment
+         } else if (PREF_ALWAYS_SHOW_CONTEXTMENU_ON_LINKS.equals(preference.getKey())) {
+             mShowAlwaysContextMenuOnLinksDelegate.setValue((Boolean) newValue);
+             mDelegate.requestRestart(getActivity());
++        } else if (PREF_DISABLE_EXTENSION_CONTEXT_MENUS.equals(preference.getKey())) {
++            ChromeSharedPreferences.getInstance()
++                    .writeBoolean(
++                            ChromePreferenceKeys.ACCESSIBILITY_DISABLE_EXTENSION_CONTEXT_MENUS,
++                            (Boolean) newValue);
+         } else if (PREF_PAGE_ZOOM_INCLUDE_OS_ADJUSTMENT.equals(preference.getKey())) {
+             // TODO(mschillaci): Implement the override behavior for OS level.
+         } else if (OmniboxFeatures.KEY_JUMP_START_OMNIBOX.equals(preference.getKey())) {
+-- 
+2.43.0
+

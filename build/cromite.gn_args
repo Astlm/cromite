@@ -113,7 +113,7 @@ if (target_os == "android") {
   # Build arm64-only (no secondary ABI / no 32-bit toolchain).
   enable_android_secondary_abi = false
 
-  chrome_public_manifest_package = "org.cromite.cromite"
+  chrome_public_manifest_package = "org.cromite.cromitf"
   system_webview_package_name="org.cromite.webview" #"com.android.webview"
   system_webview_shell_package_name="org.cromite.webview_shell"
 

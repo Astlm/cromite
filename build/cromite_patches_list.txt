@@ -126,6 +126,7 @@ mime_util-force-text-x-suse-ymp-to-be-downloaded.patch
 Client-hints-overrides.patch
 Allow-building-without-enable_reporting.patch
 Experimental-user-scripts-support.patch
+Fix-userscripts-prefs-missing-namespace-close.patch
 Keep-empty-tabs-between-sessions.patch
 Disable-third-party-origin-trials.patch
 Never-use-HTTP-probes-for-connection-detection.patch
@@ -284,6 +285,7 @@ Add-a-GN-flag-to-disable-trybot-verification.patch
 Override-the-MV2-deprecation.patch
 Remove-sideloading-of-version-dll.patch
 Use-browser-navigation-handler.patch
+Add-setting-to-disable-extension-context-menus.patch
 Cromite-Branding--improve-settings-ui.patch
 Disable-Posture-API.patch
 PublicKeyCredential-fingerprinting-mitigations.patch
