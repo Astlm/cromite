@@ -219,6 +219,7 @@ Add-site-setting-for-open-external-apps.patch
 Add-autoplay-site-setting.patch
 Site-setting-for-images.patch
 JIT-site-settings.patch
+Add-webGPU-site-setting.patch
 Add-webGL-site-setting.patch
 Add-webRTC-site-settings.patch
 Show-site-settings-for-cookies-javascript-and-ads.patch

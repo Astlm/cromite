@@ -1,0 +1,479 @@
+From 256be3a2f4e8ed2af18fb56a125c1c62573b20ee Mon Sep 17 00:00:00 2001
+From: Codex <codex@openai.com>
+Date: Fri, 10 Apr 2026 15:18:37 +0800
+Subject: [PATCH] Add WebGPU site setting
+
+---
+ .../settings/site_settings_helper_unittest.cc | 37 ++++++++
+ .../impl/BromiteWebGPUContentSetting.java     | 89 +++++++++++++++++++
+ .../impl/include_all_directory.java           |  5 +-
+ .../bromite_content_settings/placeholder.txt  | 14 ++-
+ .../bromite_content_settings/webgpu.grdp      | 27 ++++++
+ .../bromite_content_settings/placeholder.txt  |  3 +-
+ .../bromite_content_settings/webgpu.inc       | 24 +++++
+ .../bromite_content_settings/WEBGPU.inc       |  1 +
+ .../bromite_content_settings/placeholder.txt  |  3 +-
+ .../core/common/content_settings.cc           |  1 +
+ .../execution_context/execution_context.cc    | 16 +++-
+ .../execution_context/execution_context.h     |  1 +
+ .../blink/renderer/modules/webgpu/gpu.cc      | 10 +++
+ .../modules/webgpu/gpu_context_lost_test.cc   | 68 ++++++++++++++
+ 14 files changed, 292 insertions(+), 7 deletions(-)
+ create mode 100644 components/browser_ui/site_settings/android/java/src/org/chromium/components/browser_ui/site_settings/impl/BromiteWebGPUContentSetting.java
+ create mode 100644 components/browser_ui/strings/bromite_content_settings/webgpu.grdp
+ create mode 100644 components/content_settings/core/browser/bromite_content_settings/webgpu.inc
+ create mode 100644 components/content_settings/core/common/bromite_content_settings/WEBGPU.inc
+
+diff --git a/chrome/browser/ui/webui/settings/site_settings_helper_unittest.cc b/chrome/browser/ui/webui/settings/site_settings_helper_unittest.cc
+index 84cc381826..ac3cde6a2a 100644
+--- a/chrome/browser/ui/webui/settings/site_settings_helper_unittest.cc
++++ b/chrome/browser/ui/webui/settings/site_settings_helper_unittest.cc
+@@ -1020,6 +1020,43 @@ TEST_F(SiteSettingsHelperTest, AutomaticFullscreenVisibility) {
+   EXPECT_TRUE(base::Contains(types, type));
+ }
+ 
++TEST_F(SiteSettingsHelperTest, WebGPUVisibility) {
++  TestingProfile profile;
++  profile.SetPermissionControllerDelegate(
++      permissions::GetPermissionControllerDelegate(&profile));
++  const ContentSettingsType type = ContentSettingsType::WEBGPU;
++
++  EXPECT_TRUE(base::Contains(GetVisiblePermissionCategories(), type));
++
++  constexpr char kDefault[] = "https://www.default.com:443";
++  constexpr char kAllowed[] = "https://www.allowed.com:443";
++
++  SiteSettingSource source;
++  auto* map = HostContentSettingsMapFactory::GetForProfile(&profile);
++  ContentSetting content_setting =
++      GetContentSettingForOrigin(&profile, map, GURL(kDefault), type, &source);
++  EXPECT_EQ(SiteSettingSource::kDefault, source);
++  EXPECT_EQ(CONTENT_SETTING_BLOCK, content_setting);
++  EXPECT_FALSE(
++      base::Contains(GetVisiblePermissionCategories(kDefault, &profile), type));
++
++  auto policy_provider = std::make_unique<content_settings::MockProvider>();
++  policy_provider->SetWebsiteSetting(
++      ContentSettingsPattern::FromString(kAllowed),
++      ContentSettingsPattern::FromString(kAllowed), type,
++      base::Value(CONTENT_SETTING_ALLOW), /*constraints=*/{});
++  policy_provider->set_read_only(true);
++  content_settings::TestUtils::OverrideProvider(map, std::move(policy_provider),
++                                                ProviderType::kPolicyProvider);
++
++  content_setting =
++      GetContentSettingForOrigin(&profile, map, GURL(kAllowed), type, &source);
++  EXPECT_EQ(SiteSettingSource::kPolicy, source);
++  EXPECT_EQ(CONTENT_SETTING_ALLOW, content_setting);
++  EXPECT_TRUE(
++      base::Contains(GetVisiblePermissionCategories(kAllowed, &profile), type));
++}
++
+ #if BUILDFLAG(IS_CHROMEOS)
+ TEST_F(SiteSettingsHelperTest, WebPrintingVisibility) {
+   TestingProfile profile;
+diff --git a/components/browser_ui/site_settings/android/java/src/org/chromium/components/browser_ui/site_settings/impl/BromiteWebGPUContentSetting.java b/components/browser_ui/site_settings/android/java/src/org/chromium/components/browser_ui/site_settings/impl/BromiteWebGPUContentSetting.java
+new file mode 100644
+index 0000000000..8fdd6000eb
+--- /dev/null
++++ b/components/browser_ui/site_settings/android/java/src/org/chromium/components/browser_ui/site_settings/impl/BromiteWebGPUContentSetting.java
+@@ -0,0 +1,89 @@
++/*
++    This file is part of Bromite.
++
++    Bromite is free software: you can redistribute it and/or modify
++    it under the terms of the GNU General Public License as published by
++    the Free Software Foundation, either version 3 of the License, or
++    (at your option) any later version.
++
++    Bromite is distributed in the hope that it will be useful,
++    but WITHOUT ANY WARRANTY; without even the implied warranty of
++    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++    GNU General Public License for more details.
++
++    You should have received a copy of the GNU General Public License
++    along with Bromite. If not, see <https://www.gnu.org/licenses/>.
++*/
++
++package org.chromium.components.browser_ui.site_settings.impl;
++
++import org.chromium.components.browser_ui.site_settings.R;
++
++import org.chromium.components.browser_ui.site_settings.BromiteCustomContentSetting;
++import org.chromium.components.browser_ui.site_settings.ContentSettingsResources;
++import org.chromium.components.browser_ui.site_settings.SiteSettingsCategory;
++import org.chromium.components.content_settings.ContentSetting;
++import org.chromium.components.content_settings.ContentSettingsType;
++
++import androidx.annotation.Nullable;
++
++public class BromiteWebGPUContentSetting extends BromiteCustomContentSetting {
++    public BromiteWebGPUContentSetting() {
++        super(/*contentSettingsType*/ ContentSettingsType.WEBGPU,
++              /*defaultEnabledValue*/ ContentSetting.ALLOW,
++              /*defaultDisabledValue*/ ContentSetting.BLOCK,
++              /*allowException*/ true,
++              /*preferenceKey*/ "webgpu",
++              /*profilePrefKey*/ "webgpu");
++    }
++
++    @Override
++    public ContentSettingsResources.ResourceItem getResourceItem() {
++        return new ContentSettingsResources.ResourceItem(
++            /*icon*/ R.drawable.web_asset,
++            /*title*/ R.string.webgpu_permission_title,
++            /*defaultEnabledValue*/ getDefaultEnabledValue(),
++            /*defaultDisabledValue*/ getDefaultDisabledValue(),
++            /*enabledSummary*/ R.string.website_settings_category_webgpu_enabled,
++            /*disabledSummary*/ R.string.website_settings_category_webgpu_disabled,
++            /*summaryOverrideForScreenReader*/ 0);
++    }
++
++    @Override
++    public int getCategorySummary(@Nullable @ContentSetting int value) {
++        switch (value) {
++            case ContentSetting.ALLOW:
++                return R.string.website_settings_category_webgpu_enabled;
++            case ContentSetting.BLOCK:
++                return R.string.website_settings_category_webgpu_disabled;
++            default:
++                return 0;
++        }
++    }
++
++    @Override
++    public int getCategoryDescription() {
++        return R.string.settings_site_settings_webgpu_description;
++    }
++
++    @Override
++    public boolean requiresTriStateContentSetting() {
++        return false;
++    }
++
++    @Override
++    public boolean showOnlyDescriptions() {
++        return true;
++    }
++
++    @Override
++    public int getAddExceptionDialogMessage() {
++        return R.string.website_settings_category_webgpu_enabled;
++    }
++
++    @Override
++    public @Nullable Boolean considerException(
++            SiteSettingsCategory category, @ContentSetting int value) {
++        return value != ContentSetting.BLOCK;
++    }
++}
+diff --git a/components/browser_ui/site_settings/android/java/src/org/chromium/components/browser_ui/site_settings/impl/include_all_directory.java b/components/browser_ui/site_settings/android/java/src/org/chromium/components/browser_ui/site_settings/impl/include_all_directory.java
+index 5174b09c22..2da7fee81b 100644
+--- a/components/browser_ui/site_settings/android/java/src/org/chromium/components/browser_ui/site_settings/impl/include_all_directory.java
++++ b/components/browser_ui/site_settings/android/java/src/org/chromium/components/browser_ui/site_settings/impl/include_all_directory.java
+@@ -1 +1,4 @@
+-this file is intentionally empty
++package org.chromium.components.browser_ui.site_settings.impl;
++
++// Update this file when adding Bromite custom content settings so the
++// generated srcjar is refreshed during incremental builds.
+diff --git a/components/browser_ui/strings/bromite_content_settings/placeholder.txt b/components/browser_ui/strings/bromite_content_settings/placeholder.txt
+index 5174b09c22..4ba5c25e1f 100644
+--- a/components/browser_ui/strings/bromite_content_settings/placeholder.txt
++++ b/components/browser_ui/strings/bromite_content_settings/placeholder.txt
+@@ -1 +1,13 @@
+-this file is intentionally empty
++<part file="browser_ui/strings/bromite_content_settings/autoplay.grdp"/>
++<part file="browser_ui/strings/bromite_content_settings/images.grdp"/>
++<part file="browser_ui/strings/bromite_content_settings/insecure_private_network.grdp"/>
++<part file="browser_ui/strings/bromite_content_settings/javascript_jit.grdp"/>
++<part file="browser_ui/strings/bromite_content_settings/open_external_apps.grdp"/>
++<part file="browser_ui/strings/bromite_content_settings/popups.grdp"/>
++<part file="browser_ui/strings/bromite_content_settings/request_desktop_site.grdp"/>
++<part file="browser_ui/strings/bromite_content_settings/search_engine_desktop_ui.grdp"/>
++<part file="browser_ui/strings/bromite_content_settings/timezone.grdp"/>
++<part file="browser_ui/strings/bromite_content_settings/viewport.grdp"/>
++<part file="browser_ui/strings/bromite_content_settings/webgl.grdp"/>
++<part file="browser_ui/strings/bromite_content_settings/webgpu.grdp"/>
++<part file="browser_ui/strings/bromite_content_settings/webrtc.grdp"/>
+diff --git a/components/browser_ui/strings/bromite_content_settings/webgpu.grdp b/components/browser_ui/strings/bromite_content_settings/webgpu.grdp
+new file mode 100644
+index 0000000000..a77bd65298
+--- /dev/null
++++ b/components/browser_ui/strings/bromite_content_settings/webgpu.grdp
+@@ -0,0 +1,27 @@
++<?xml version="1.0" encoding="utf-8"?>
++<grit-part>
++  <message name="IDS_SITE_SETTINGS_TYPE_WEBGPU" desc="The label used for WebGPU site settings controls." formatter_data="android_java">
++    WebGPU
++  </message>
++  <message name="IDS_SETTINGS_SITE_SETTINGS_WEBGPU_DESCRIPTION" desc="Description of the WebGPU content setting." formatter_data="android_java">
++    Enable WebGPU, a JavaScript API for high-performance graphics and computation
++  </message>
++  <message name="IDS_SITE_SETTINGS_TYPE_WEBGPU_MID_SENTENCE" desc="The label used for WebGPU site settings controls when used mid-sentence." formatter_data="android_java">
++    WebGPU
++  </message>
++  <message name="IDS_WEBGPU_PERMISSION_TITLE" desc="Title of the permission to use WebGPU [CHAR-LIMIT=32]" formatter_data="android_java">
++    WebGPU
++  </message>
++  <message name="IDS_WEBSITE_SETTINGS_CATEGORY_WEBGPU_ENABLED" desc="Summary text explaining that WebGPU is fully enabled." formatter_data="android_java">
++    Enabled
++  </message>
++  <message name="IDS_WEBSITE_SETTINGS_CATEGORY_WEBGPU_DISABLED" desc="Summary text explaining that WebGPU is fully disabled." formatter_data="android_java">
++    Disabled
++  </message>
++  <message name="IDS_SETTINGS_SITE_SETTINGS_WEBGPU_ALLOWED_EXCEPTIONS" desc="Label for the allowed exceptions site list of the WebGPU setting.">
++    Allowed to use WebGPU
++  </message>
++  <message name="IDS_SETTINGS_SITE_SETTINGS_WEBGPU_BLOCKED_EXCEPTIONS" desc="Label for the blocked exceptions site list of the WebGPU setting.">
++    Not allowed to use WebGPU
++  </message>
++</grit-part>
+diff --git a/components/content_settings/core/browser/bromite_content_settings/placeholder.txt b/components/content_settings/core/browser/bromite_content_settings/placeholder.txt
+index 5174b09c22..2ebac40660 100644
+--- a/components/content_settings/core/browser/bromite_content_settings/placeholder.txt
++++ b/components/content_settings/core/browser/bromite_content_settings/placeholder.txt
+@@ -1 +1,2 @@
+-this file is intentionally empty
++Update this file when adding Bromite browser content settings so the
++generated include is refreshed during incremental builds.
+diff --git a/components/content_settings/core/browser/bromite_content_settings/webgpu.inc b/components/content_settings/core/browser/bromite_content_settings/webgpu.inc
+new file mode 100644
+index 0000000000..e095d1aeea
+--- /dev/null
++++ b/components/content_settings/core/browser/bromite_content_settings/webgpu.inc
+@@ -0,0 +1,24 @@
++  Register(ContentSettingsType::WEBGPU, "webgpu", CONTENT_SETTING_BLOCK,
++           WebsiteSettingsInfo::SYNCABLE,
++           /*allowlisted_schemes=*/{},
++           /*valid_settings=*/{CONTENT_SETTING_ALLOW,
++                               CONTENT_SETTING_BLOCK},
++           WebsiteSettingsInfo::TOP_ORIGIN_ONLY_SCOPE,
++           WebsiteSettingsRegistry::ALL_PLATFORMS,
++           ContentSettingsInfo::INHERIT_IN_INCOGNITO,
++           PermissionSettingsInfo::EXCEPTIONS_ON_SECURE_AND_INSECURE_ORIGINS);
++
++  content_settings::WebsiteSettingsRegistry::GetInstance()
++      ->GetMutable(ContentSettingsType::WEBGPU)
++      ->set_show_into_info_page()
++      .set_desktop_ui()
++      .set_is_renderer_content_setting()
++      .set_title_ui(IDS_SITE_SETTINGS_TYPE_WEBGPU)
++      .set_description_ui(IDS_SETTINGS_SITE_SETTINGS_WEBGPU_DESCRIPTION)
++      .set_allowed_ui(IDS_WEBSITE_SETTINGS_CATEGORY_WEBGPU_ENABLED)
++      .set_blocked_ui(IDS_WEBSITE_SETTINGS_CATEGORY_WEBGPU_DISABLED)
++      .set_allowed_exceptions_ui(
++          IDS_SETTINGS_SITE_SETTINGS_WEBGPU_ALLOWED_EXCEPTIONS)
++      .set_blocked_exceptions_ui(
++          IDS_SETTINGS_SITE_SETTINGS_WEBGPU_BLOCKED_EXCEPTIONS)
++      .set_mid_sentence_ui(IDS_SITE_SETTINGS_TYPE_WEBGPU_MID_SENTENCE);
+diff --git a/components/content_settings/core/common/bromite_content_settings/WEBGPU.inc b/components/content_settings/core/common/bromite_content_settings/WEBGPU.inc
+new file mode 100644
+index 0000000000..226f35b491
+--- /dev/null
++++ b/components/content_settings/core/common/bromite_content_settings/WEBGPU.inc
+@@ -0,0 +1 @@
++  WEBGPU,
+diff --git a/components/content_settings/core/common/bromite_content_settings/placeholder.txt b/components/content_settings/core/common/bromite_content_settings/placeholder.txt
+index 5174b09c22..7f0830e737 100644
+--- a/components/content_settings/core/common/bromite_content_settings/placeholder.txt
++++ b/components/content_settings/core/common/bromite_content_settings/placeholder.txt
+@@ -1 +1,2 @@
+-this file is intentionally empty
++Update this file when adding Bromite common content settings so the generated
++include is refreshed during incremental builds.
+diff --git a/components/content_settings/core/common/content_settings.cc b/components/content_settings/core/common/content_settings.cc
+index a8cf3e6ea8..e31d094c22 100644
+--- a/components/content_settings/core/common/content_settings.cc
++++ b/components/content_settings/core/common/content_settings.cc
+@@ -116,6 +116,7 @@ bool RendererContentSettingRules::IsRendererContentSetting(
+     case ContentSettingsType::TIMEZONE_OVERRIDE:
+     case ContentSettingsType::VIEWPORT:
+     case ContentSettingsType::WEBGL:
++    case ContentSettingsType::WEBGPU:
+     case ContentSettingsType::WEBRTC:
+     case ContentSettingsType::AUTO_DARK_WEB_CONTENT:
+       return true;
+diff --git a/third_party/blink/renderer/core/execution_context/execution_context.cc b/third_party/blink/renderer/core/execution_context/execution_context.cc
+index 646236f94a..21a73eee25 100644
+--- a/third_party/blink/renderer/core/execution_context/execution_context.cc
++++ b/third_party/blink/renderer/core/execution_context/execution_context.cc
+@@ -86,13 +86,23 @@ blink::WebContentSettingsClient* GetContentSettingsClientFor(
+   return settings;
+ }
+ 
+-bool AllowWebgl(ExecutionContext* context) {
+-  blink::WebContentSettingsClient* settings = GetContentSettingsClientFor(context);
++bool AllowContentSettingFor(ExecutionContext* context,
++                            ContentSettingsType content_type) {
++  blink::WebContentSettingsClient* settings =
++      GetContentSettingsClientFor(context);
+   if (settings)
+-    return settings->AllowContentSetting(ContentSettingsType::WEBGL, false);
++    return settings->AllowContentSetting(content_type, false);
+   return false;
+ }
+ 
++bool AllowWebgl(ExecutionContext* context) {
++  return AllowContentSettingFor(context, ContentSettingsType::WEBGL);
++}
++
++bool AllowWebgpu(ExecutionContext* context) {
++  return AllowContentSettingFor(context, ContentSettingsType::WEBGPU);
++}
++
+ ExecutionContext::ExecutionContext(v8::Isolate* isolate,
+                                    Agent* agent,
+                                    bool is_window)
+diff --git a/third_party/blink/renderer/core/execution_context/execution_context.h b/third_party/blink/renderer/core/execution_context/execution_context.h
+index a4731e3109..517dc6db94 100644
+--- a/third_party/blink/renderer/core/execution_context/execution_context.h
++++ b/third_party/blink/renderer/core/execution_context/execution_context.h
+@@ -115,6 +115,7 @@ enum ReasonForCallingCanExecuteScripts {
+ enum ReferrerPolicySource { kPolicySourceHttpHeader, kPolicySourceMetaTag };
+ 
+ CORE_EXPORT bool AllowWebgl(ExecutionContext* context);
++CORE_EXPORT bool AllowWebgpu(ExecutionContext* context);
+ 
+ // An environment in which script can execute. This class exposes the common
+ // properties of script execution environments on the web (i.e, common between
+diff --git a/third_party/blink/renderer/modules/webgpu/gpu.cc b/third_party/blink/renderer/modules/webgpu/gpu.cc
+index f01a72a185..04643a4881 100644
+--- a/third_party/blink/renderer/modules/webgpu/gpu.cc
++++ b/third_party/blink/renderer/modules/webgpu/gpu.cc
+@@ -54,6 +54,9 @@ namespace blink {
+ 
+ namespace {
+ 
++constexpr char kWebGPUDisabledBySiteSettingsMessage[] =
++    "WebGPU is disabled by site settings policy.";
++
+ [[maybe_unused]] void AddConsoleWarning(ExecutionContext* execution_context,
+                                         const char* message) {
+   if (execution_context) {
+@@ -163,6 +166,8 @@ GPU::~GPU() = default;
+ WGSLLanguageFeatures* GPU::wgslLanguageFeatures() const {
+   if (!base::FeatureList::IsEnabled(features::kWebGPUService))
+     return nullptr;
++  if (!AllowWebgpu(GetExecutionContext()))
++    return nullptr;
+   return wgsl_language_features_.Get();
+ }
+ 
+@@ -453,6 +458,11 @@ ScriptPromise<IDLNullable<GPUAdapter>> GPU::requestAdapter(
+       MakeGarbageCollected<ScriptPromiseResolver<IDLNullable<GPUAdapter>>>(
+           script_state);
+   auto promise = resolver->Promise();
++  if (!AllowWebgpu(execution_context)) {
++    AddConsoleWarning(execution_context, kWebGPUDisabledBySiteSettingsMessage);
++    resolver->Resolve(nullptr);
++    return promise;
++  }
+   RequestAdapterImpl(script_state, options, resolver);
+   return promise;
+ }
+diff --git a/third_party/blink/renderer/modules/webgpu/gpu_context_lost_test.cc b/third_party/blink/renderer/modules/webgpu/gpu_context_lost_test.cc
+index 14cc551269..18c96f15d4 100644
+--- a/third_party/blink/renderer/modules/webgpu/gpu_context_lost_test.cc
++++ b/third_party/blink/renderer/modules/webgpu/gpu_context_lost_test.cc
+@@ -5,15 +5,22 @@
+ #include "base/functional/callback.h"
+ #include "base/memory/raw_ptr.h"
+ #include "base/run_loop.h"
++#include "base/test/scoped_feature_list.h"
+ #include "base/test/mock_callback.h"
++#include "gpu/config/gpu_finch_features.h"
+ #include "gpu/command_buffer/client/webgpu_interface_stub.h"
+ #include "testing/gmock/include/gmock/gmock.h"
+ #include "testing/gtest/include/gtest/gtest.h"
++#include "third_party/blink/public/platform/web_content_settings_client.h"
++#include "third_party/blink/renderer/bindings/core/v8/script_promise_tester.h"
+ #include "third_party/blink/renderer/bindings/core/v8/v8_binding_for_testing.h"
++#include "third_party/blink/renderer/bindings/modules/v8/v8_gpu_request_adapter_options.h"
+ #include "third_party/blink/renderer/core/frame/local_dom_window.h"
+ #include "third_party/blink/renderer/core/frame/local_frame.h"
+ #include "third_party/blink/renderer/core/frame/navigator.h"
++#include "third_party/blink/renderer/core/frame/web_local_frame_impl.h"
+ #include "third_party/blink/renderer/core/testing/dummy_page_holder.h"
++#include "third_party/blink/renderer/modules/webgpu/gpu_adapter.h"
+ #include "third_party/blink/renderer/modules/webgpu/gpu.h"
+ #include "third_party/blink/renderer/platform/graphics/gpu/dawn_control_client_holder.h"
+ #include "third_party/blink/renderer/platform/graphics/gpu/drawing_buffer_test_helpers.h"
+@@ -74,6 +81,23 @@ class WebGPUContextLostTest : public testing::Test {
+   std::unique_ptr<DummyPageHolder> page_;
+ };
+ 
++class TestContentSettingsClient final : public WebContentSettingsClient {
++ public:
++  explicit TestContentSettingsClient(bool allow_webgpu)
++      : allow_webgpu_(allow_webgpu) {}
++
++  bool AllowContentSetting(ContentSettingsType type,
++                           bool enabled_per_settings) override {
++    if (type == ContentSettingsType::WEBGPU) {
++      return allow_webgpu_;
++    }
++    return enabled_per_settings;
++  }
++
++ private:
++  const bool allow_webgpu_;
++};
++
+ // Test that the context provider is destructed after the last reference to
+ // its owning DawnControlClientHolder is dropped.
+ TEST_F(WebGPUContextLostTest, DestructedAfterLastRefDropped) {
+@@ -227,6 +251,50 @@ TEST_F(WebGPUContextLostTest, ContextDestroyed) {
+   testing::Mock::VerifyAndClear(&destruction_callback);
+ }
+ 
++TEST_F(WebGPUContextLostTest, WgslLanguageFeaturesFollowSiteSettings) {
++  base::test::ScopedFeatureList scoped_feature_list;
++  scoped_feature_list.InitAndEnableFeature(::features::kWebGPUService);
++
++  V8TestingScope v8_test_scope;
++  auto [execution_context, gpu] = SetUpGPU(&v8_test_scope);
++  ASSERT_NE(nullptr, execution_context);
++  auto* web_frame = WebLocalFrameImpl::FromFrame(page_->GetFrame());
++
++  TestContentSettingsClient blocked_client(false);
++  web_frame->SetContentSettingsClient(&blocked_client);
++  EXPECT_EQ(nullptr, gpu->wgslLanguageFeatures());
++
++  TestContentSettingsClient allowed_client(true);
++  web_frame->SetContentSettingsClient(&allowed_client);
++  EXPECT_NE(nullptr, gpu->wgslLanguageFeatures());
++
++  web_frame->SetContentSettingsClient(nullptr);
++}
++
++TEST_F(WebGPUContextLostTest, RequestAdapterBlockedBySiteSettings) {
++  base::test::ScopedFeatureList scoped_feature_list;
++  scoped_feature_list.InitAndEnableFeature(::features::kWebGPUService);
++
++  V8TestingScope v8_test_scope;
++  auto [execution_context, gpu] = SetUpGPU(&v8_test_scope);
++  ASSERT_NE(nullptr, execution_context);
++  auto* web_frame = WebLocalFrameImpl::FromFrame(page_->GetFrame());
++
++  TestContentSettingsClient blocked_client(false);
++  web_frame->SetContentSettingsClient(&blocked_client);
++
++  auto* options = GPURequestAdapterOptions::Create();
++  ScriptPromiseTester tester(v8_test_scope.GetScriptState(),
++                             gpu->requestAdapter(
++                                 v8_test_scope.GetScriptState(), options));
++  tester.WaitUntilSettled();
++
++  EXPECT_TRUE(tester.IsFulfilled());
++  EXPECT_TRUE(tester.Value().V8Value()->IsNull());
++
++  web_frame->SetContentSettingsClient(nullptr);
++}
++
+ }  // namespace
+ 
+ }  // namespace blink
+-- 
+2.43.0
+
