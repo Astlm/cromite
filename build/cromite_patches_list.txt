@@ -147,7 +147,6 @@ Disable-UA-full-version.patch
 Dictionary-suggestions-for-the-Omnibox.patch
 Disable-AsyncDNS-by-default.patch
 Restore-LastTabStandingTracker.patch
-Add-lifetime-options-for-permissions.patch
 Disable-crash-reporting.patch
 Samsung-Note-9-SDK27-crazylinker-workaround.patch
 Disable-TLS-resumption.patch
