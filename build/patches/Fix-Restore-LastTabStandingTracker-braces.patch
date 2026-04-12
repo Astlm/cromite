@@ -1,0 +1,22 @@
+From 60c64d93cda7d3910eb43d25529f21db41a92f6d Mon Sep 17 00:00:00 2001
+From: Codex <codex@openai.com>
+Date: Mon, 13 Apr 2026 00:12:04 +0800
+Subject: [PATCH] Fix Restore LastTabStandingTracker braces
+
+---
+ chrome/browser/permissions/last_tab_standing_tracker.cc | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/chrome/browser/permissions/last_tab_standing_tracker.cc b/chrome/browser/permissions/last_tab_standing_tracker.cc
+index 5df1981731..d79fa9ebca 100644
+--- a/chrome/browser/permissions/last_tab_standing_tracker.cc
++++ b/chrome/browser/permissions/last_tab_standing_tracker.cc
+@@ -56,4 +56,5 @@ void LastTabStandingTracker::WebContentsUnloadedOrigin(
+     for (auto& observer : observer_list_) {
+       observer.OnLastPageFromOriginClosed(origin);
+     }
++  }
+ }
+-- 
+2.43.0
+
