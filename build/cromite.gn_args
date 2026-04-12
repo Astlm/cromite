@@ -123,8 +123,16 @@ if (target_os == "android") {
   dfmify_dev_ui = false
 
   if (getenv("USE_KEYSTORE") != "") {
-    android_keystore_path = "/home/lg/working_dir/cromite.keystore"
-    android_keystore_name = "cromite"
+    if (getenv("KEYSTORE_PATH") != "") {
+      android_keystore_path = getenv("KEYSTORE_PATH")
+    } else {
+      android_keystore_path = "/root/cromite/1214514.jks"
+    }
+    if (getenv("KEYSTORE_NAME") != "") {
+      android_keystore_name = getenv("KEYSTORE_NAME")
+    } else {
+      android_keystore_name = "1214514"
+    }
     android_keystore_password = getenv("KEYSTORE_PASSWORD")
   }
 
